@@ -19,6 +19,15 @@ from monai.transforms import (
     RandAdjustContrast,
     Resize,
     ToTensor,
+    EnsureChannelFirstD,
+    ScaleIntensityRangeD,
+    RandRotateD,
+    RandFlipD,
+    RandZoomD,
+    RandGaussianNoiseD,
+    RandAdjustContrastD,
+    ResizeD,
+    ToTensorD,
 )
 from monai.data import CacheDataset, DataLoader as MonaiDataLoader
 import nibabel as nib
@@ -98,22 +107,33 @@ class CTDataset(Dataset):
         if len(data.shape) == 2:
             data = np.expand_dims(data, axis=-1)
         
+        # 添加通道维度（MONAI要求通道优先）
+        # 从 (H, W, D) 变为 (C, H, W, D)，其中 C=1
+        data = np.expand_dims(data, axis=0)
+        
         return data
 
 
 def get_transforms(config: DataConfig, is_train: bool = True):
     """
     获取数据变换管道
+    使用MONAI的字典变换（MapTransform）来处理字典输入
     """
     transforms = []
     
+    # 定义要处理的键
+    keys = ["low", "full"]
+    
     # 1. 确保通道优先（MONAI要求）
-    transforms.append(EnsureChannelFirst())
+    # 数据已经在 _load_image 中添加了通道维度 (C, H, W, D)
+    # 使用 channel_dim=0 指定通道在第一个位置
+    transforms.append(EnsureChannelFirstD(keys=keys, channel_dim=0))
     
     # 2. 调整强度范围（CT值标准化）
     if config.normalize:
         transforms.append(
-            ScaleIntensityRange(
+            ScaleIntensityRangeD(
+                keys=keys,
                 a_min=config.normalize_range[0],
                 a_max=config.normalize_range[1],
                 b_min=0.0,
@@ -123,23 +143,45 @@ def get_transforms(config: DataConfig, is_train: bool = True):
         )
     
     # 3. 调整大小
+    # 对于形状 (C, H, W, D)，空间维度是 (H, W, D)
+    # 使用 -1 保持深度维度不变
+    spatial_size = list(config.image_size[:2]) + [-1]  # (H, W, -1)
     transforms.append(
-        Resize(spatial_size=config.image_size[:2])  # 仅调整H,W，保持深度
+        ResizeD(keys=keys, spatial_size=spatial_size)  # 调整H,W，保持深度不变
     )
     
     # 4. 训练时的数据增强
     if is_train:
+        # 计算安全的min_zoom以避免深度维度为0
+        # 如果config.image_size有深度维度，使用它
+        if len(config.image_size) >= 3:
+            depth = config.image_size[2]
+            # 确保缩放后深度维度至少为1: floor(depth * min_zoom) >= 1
+            # 对于depth=1，需要min_zoom >= 1.0
+            # 对于depth=2，需要min_zoom >= 0.5
+            # 这里我们使用保守的min_zoom=1.0来避免问题
+            safe_min_zoom = max(1.0, 0.9)  # 至少1.0
+        else:
+            safe_min_zoom = 1.0  # 默认不使用深度缩放
+        
         transforms.extend([
-            RandRotate(range_x=15, prob=0.5, keep_size=True),
-            RandFlip(spatial_axis=0, prob=0.5),
-            RandFlip(spatial_axis=1, prob=0.5),
-            RandZoom(min_zoom=0.9, max_zoom=1.1, prob=0.5),
-            RandGaussianNoise(prob=0.2, std=0.01),
-            RandAdjustContrast(prob=0.3, gamma=(0.7, 1.3)),
+            RandRotateD(keys=keys, range_x=15, prob=0.5, keep_size=True),
+            RandFlipD(keys=keys, spatial_axis=0, prob=0.5),
+            RandFlipD(keys=keys, spatial_axis=1, prob=0.5),
+            # 使用安全的min_zoom，或者对于2D数据跳过深度维度的缩放
+            RandZoomD(
+                keys=keys,
+                min_zoom=safe_min_zoom,
+                max_zoom=1.1,
+                prob=0.5,
+                keep_size=True  # 保持原始大小，避免批次中大小不一致
+            ),
+            RandGaussianNoiseD(keys=keys, prob=0.2, std=0.01),
+            RandAdjustContrastD(keys=keys, prob=0.3, gamma=(0.7, 1.3)),
         ])
     
     # 5. 转换为张量
-    transforms.append(ToTensor(dtype=torch.float32))
+    transforms.append(ToTensorD(keys=keys, dtype=torch.float32))
     
     return Compose(transforms)
 
@@ -228,30 +270,35 @@ def prepare_data_loaders(config: DataConfig):
 def create_dummy_data(config: DataConfig, num_samples: int = 10):
     """
     创建虚拟数据用于测试
+    创建3D数据以避免RandZoomD深度维度为0的问题
     """
     os.makedirs(os.path.join(config.data_dir, config.low_dose_dir), exist_ok=True)
     os.makedirs(os.path.join(config.data_dir, config.full_dose_dir), exist_ok=True)
     
+    # 获取深度维度，至少为2以避免RandZoomD问题
+    if len(config.image_size) >= 3:
+        d = max(config.image_size[2], 2)
+    else:
+        d = 2  # 默认深度维度
+    
     for i in range(num_samples):
-        # 创建随机CT图像（模拟低剂量和高剂量）
+        # 创建随机3D CT图像（模拟低剂量和高剂量）
         h, w = config.image_size[:2]
         
         # 低剂量：添加更多噪声
-        low_dose = np.random.randn(h, w) * 0.3 + 0.5
+        low_dose = np.random.randn(h, w, d) * 0.3 + 0.5
         low_dose = np.clip(low_dose, 0, 1)
         
         # 全剂量：更清晰的图像
-        full_dose = np.random.randn(h, w) * 0.1 + 0.5
+        full_dose = np.random.randn(h, w, d) * 0.1 + 0.5
         full_dose = np.clip(full_dose, 0, 1)
         
-        # 保存为PNG
-        low_img = Image.fromarray((low_dose * 255).astype(np.uint8))
-        full_img = Image.fromarray((full_dose * 255).astype(np.uint8))
+        # 保存为numpy数组（.npy格式）
+        low_path = os.path.join(config.data_dir, config.low_dose_dir, f"low_{i:03d}.npy")
+        full_path = os.path.join(config.data_dir, config.full_dose_dir, f"full_{i:03d}.npy")
         
-        low_path = os.path.join(config.data_dir, config.low_dose_dir, f"low_{i:03d}.png")
-        full_path = os.path.join(config.data_dir, config.full_dose_dir, f"full_{i:03d}.png")
-        
-        low_img.save(low_path)
-        full_img.save(full_path)
+        np.save(low_path, low_dose)
+        np.save(full_path, full_dose)
     
-    print(f"已创建 {num_samples} 个虚拟数据样本到 {config.data_dir}")
+    print(f"已创建 {num_samples} 个3D虚拟数据样本到 {config.data_dir}")
+    print(f"数据形状: ({h}, {w}, {d})")

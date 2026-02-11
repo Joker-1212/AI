@@ -12,7 +12,7 @@ class DataConfig:
     full_dose_dir: str = "fd"        # 全剂量CT图像目录
     image_size: Tuple[int, int, int] = (256, 256, 1)  # 图像尺寸 (H, W, D)
     batch_size: int = 4
-    num_workers: int = 4
+    num_workers: int = 0  # Windows 上设置为 0 以避免多进程问题
     train_split: float = 0.8
     val_split: float = 0.1
     test_split: float = 0.1

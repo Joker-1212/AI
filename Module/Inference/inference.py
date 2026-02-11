@@ -12,7 +12,7 @@ import glob
 import tqdm
 
 from ..Config.config import Config, DataConfig, ModelConfig
-from ..Models.models import create_model
+from ..Model.models import create_model
 from ..Loader.data_loader import get_transforms
 from ..Tools.utils import load_checkpoint, visualize_results, ensure_dir
 

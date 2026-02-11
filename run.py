@@ -12,7 +12,7 @@ from pathlib import Path
 
 from Module.Config.config import Config
 from Module.Loader.data_loader import create_dummy_data
-from Module.Models.train import Trainer
+from Module.Model.train import Trainer
 from Module.Inference.inference import CTEnhancer
 
 
