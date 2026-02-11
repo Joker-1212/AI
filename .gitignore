@@ -2,3 +2,4 @@ data
 models
 notebooks
 *.html
+src/__pycache__

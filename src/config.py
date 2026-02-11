@@ -1,7 +1,7 @@
 """
 配置参数
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Tuple, Optional
 
 @dataclass
@@ -48,9 +48,9 @@ class TrainingConfig:
 @dataclass
 class Config:
     """总配置"""
-    data: DataConfig = DataConfig()
-    model: ModelConfig = ModelConfig()
-    training: TrainingConfig = TrainingConfig()
+    data: DataConfig = field(default_factory=DataConfig)
+    model: ModelConfig = field(default_factory=ModelConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
     
     def __post_init__(self):
         # 确保分割比例总和为1
