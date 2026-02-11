@@ -11,10 +11,10 @@ from typing import Union, List, Tuple, Optional
 import glob
 import tqdm
 
-from .config import Config, DataConfig, ModelConfig
-from .models import create_model
-from .data_loader import get_transforms
-from .utils import load_checkpoint, visualize_results, ensure_dir
+from ..Config.config import Config, DataConfig, ModelConfig
+from ..Models.models import create_model
+from ..Loader.data_loader import get_transforms
+from ..Tools.utils import load_checkpoint, visualize_results, ensure_dir
 
 
 class CTEnhancer:
@@ -33,7 +33,7 @@ class CTEnhancer:
             config_dir = os.path.dirname(checkpoint_path)
             config_path = os.path.join(config_dir, "config.yaml")
             if os.path.exists(config_path):
-                from .utils import load_config
+                from ..Tools.utils import load_config
                 config = load_config(config_path, Config)
             else:
                 # 使用默认配置

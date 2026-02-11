@@ -8,18 +8,18 @@ import argparse
 from pathlib import Path
 
 # 添加src目录到路径
-sys.path.append(str(Path(__file__).parent / "src"))
+# sys.path.append(str(Path(__file__).parent / "src"))
 
-from config import Config
-from data_loader import create_dummy_data
-from train import Trainer
-from inference import CTEnhancer
+from Module.Config.config import Config
+from Module.Loader.data_loader import create_dummy_data
+from Module.Models.train import Trainer
+from Module.Inference.inference import CTEnhancer
 
 
 def train_model(config_path=None):
     """训练模型"""
     if config_path and os.path.exists(config_path):
-        from utils import load_config
+        from Module.Tools.utils import load_config
         config = load_config(config_path, Config)
     else:
         config = Config()

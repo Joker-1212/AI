@@ -25,7 +25,7 @@ import nibabel as nib
 from PIL import Image
 import glob
 
-from .config import DataConfig
+from ..Config.config import DataConfig
 
 
 class CTDataset(Dataset):

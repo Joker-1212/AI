@@ -8,8 +8,8 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import numpy as np
 from PIL import Image
 import nibabel as nib
-from src.config import DataConfig
-from src.data_loader import create_dummy_data
+from Module.Config.config import DataConfig
+from Module.Loader.data_loader import create_dummy_data
 
 
 def create_2d_ct_samples(config: DataConfig, num_samples: int = 20):
@@ -165,7 +165,7 @@ def test_pipeline(config: DataConfig):
     create_dummy_data(config, num_samples=10)
     
     # 测试数据加载器
-    from src.data_loader import prepare_data_loaders
+    from Module.Loader.data_loader import prepare_data_loaders
     
     try:
         train_loader, val_loader, test_loader = prepare_data_loaders(config)
