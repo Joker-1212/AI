@@ -22,7 +22,7 @@ class DataConfig:
 @dataclass
 class ModelConfig:
     """模型配置"""
-    model_name: str = "UNet3D"
+    model_name: str = "UNet2D"
     in_channels: int = 1
     out_channels: int = 1
     features: Tuple[int, ...] = (32, 64, 128, 256)  # 特征通道数
