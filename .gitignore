@@ -3,4 +3,4 @@ models
 notebooks
 *.html
 Logs
-*/__pycache__
+**/__pycache__

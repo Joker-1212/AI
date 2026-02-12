@@ -108,7 +108,19 @@ class Trainer:
         elif self.config.training.loss_function.lower() == "ssimloss":
             # 自定义SSIM损失
             from monai.losses import SSIMLoss
-            return SSIMLoss(spatial_dims=3)
+            # 对于深度维度为1的数据，使用较小的内核大小
+            # 或者根据模型类型决定spatial_dims
+            if hasattr(self.model, 'config') and hasattr(self.model.config, 'model_name'):
+                model_name = self.model.config.model_name
+                if model_name == "UNet2D":
+                    # 2D模型使用2D SSIM
+                    return SSIMLoss(spatial_dims=2, kernel_size=7)
+                else:
+                    # 3D模型但深度为1，使用较小的内核
+                    return SSIMLoss(spatial_dims=3, kernel_size=(7, 7, 1))
+            else:
+                # 默认使用2D SSIM，因为数据本质上是2D的
+                return SSIMLoss(spatial_dims=2, kernel_size=7)
         else:
             raise ValueError(f"未知损失函数: {self.config.training.loss_function}")
     
