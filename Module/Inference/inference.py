@@ -60,6 +60,10 @@ class CTEnhancer:
         if len(image.shape) == 2:
             image = np.expand_dims(image, axis=-1)
         
+        # 添加通道维度（MONAI要求通道优先）
+        # 从 (H, W, D) 变为 (C, H, W, D)，其中 C=1
+        image = np.expand_dims(image, axis=0)
+        
         # 应用变换
         data = self.transform({"low": image, "full": image})  # 全剂量仅作为占位符
         return data["low"].unsqueeze(0).to(self.device)  # 添加批次维度

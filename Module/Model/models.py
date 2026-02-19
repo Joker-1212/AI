@@ -9,6 +9,7 @@ from monai.networks.blocks import Convolution, ResidualUnit
 from typing import Tuple, Optional, Union
 
 from ..Config.config import ModelConfig
+from ..Tools.wavelet_transform import WaveletDomainProcessing, LearnableDirectionalWavelet, DWT2d
 
 
 class CTEnhancementModel(nn.Module):
@@ -23,27 +24,21 @@ class CTEnhancementModel(nn.Module):
 
 
 class UNet3DModel(CTEnhancementModel):
-    """3D UNet模型 - 优化处理深度维度为1的情况"""
+    """3D UNet模型 - 针对深度维度为1的优化版本（实际使用2D UNet）"""
     
     def __init__(self, config: ModelConfig):
         super().__init__(config)
         
-        # 对于深度维度为1的数据，使用strides=(2, 2, 1)避免深度维度下采样
-        # 同时调整channels数量以确保strides长度匹配
-        # strides长度应该等于len(channels) - 1
+        # 对于深度维度为1的数据，使用2D UNet但保持3D张量形状
         features = config.features
-        if len(features) > 3:
-            # 如果特征层太多，减少层数以避免深度维度问题
-            features = features[:3]
+        if len(features) > 4:
+            features = features[:4]
         
-        # 确保strides长度匹配
-        strides = (2, 2, 1)  # 深度维度不下采样
-        if len(features) - 1 < len(strides):
-            # 如果特征层数不足，减少strides长度
-            strides = strides[:len(features) - 1]
+        num_strides = len(features) - 1
+        strides = (2,) * num_strides
         
         self.model = UNet(
-            spatial_dims=3,
+            spatial_dims=2,  # 使用2D卷积
             in_channels=config.in_channels,
             out_channels=config.out_channels,
             channels=features,
@@ -55,13 +50,12 @@ class UNet3DModel(CTEnhancementModel):
         )
     
     def forward(self, x):
-        # 检查输入深度维度
-        input_depth = x.shape[-1]
-        if input_depth == 1:
-            # 深度维度为1，模型应该能处理
-            # 但可能需要特殊处理
-            pass
-        return self.model(x)
+        # 输入形状: [B, C, H, W, D=1]
+        # 转换为2D: [B, C, H, W]
+        x_2d = x.squeeze(-1)
+        output_2d = self.model(x_2d)
+        # 恢复深度维度
+        return output_2d.unsqueeze(-1)
 
 
 class UNet2DModel(CTEnhancementModel):
@@ -100,47 +94,56 @@ class UNet2DModel(CTEnhancementModel):
 
 
 class AttentionUNetModel(CTEnhancementModel):
-    """注意力UNet模型"""
+    """注意力UNet模型 - 针对深度维度为1的优化版本（实际使用2D AttentionUnet）"""
     
     def __init__(self, config: ModelConfig):
         super().__init__(config)
         
-        # AttentionUnet没有norm和act参数
-        # 使用默认的kernel_size和up_kernel_size
+        # 使用2D AttentionUnet
+        features = config.features
+        if len(features) > 4:
+            features = features[:4]
+        
+        num_strides = len(features) - 1
+        strides = (2,) * num_strides
+        
         self.model = AttentionUnet(
-            spatial_dims=3,
+            spatial_dims=2,
             in_channels=config.in_channels,
             out_channels=config.out_channels,
-            channels=config.features,
-            strides=(2, 2, 1),  # 深度维度不下采样
+            channels=features,
+            strides=strides,
             kernel_size=3,
             up_kernel_size=3,
             dropout=config.dropout,
         )
     
     def forward(self, x):
-        return self.model(x)
+        # 输入形状: [B, C, H, W, D=1]
+        # 转换为2D: [B, C, H, W]
+        x_2d = x.squeeze(-1)
+        output_2d = self.model(x_2d)
+        # 恢复深度维度
+        return output_2d.unsqueeze(-1)
 
 
 class ResUNetModel(CTEnhancementModel):
-    """残差UNet模型 - 优化处理深度维度为1的情况"""
+    """残差UNet模型 - 针对深度维度为1的优化版本（实际使用2D UNet）"""
     
     def __init__(self, config: ModelConfig):
         super().__init__(config)
         
-        # 对于深度维度为1的数据，使用strides=(2, 2, 1)避免深度维度下采样
-        # 调整特征层数以匹配strides
+        # 对于深度维度为1的数据，使用2D UNet但保持3D张量形状
         features = config.features
-        if len(features) > 3:
-            features = features[:3]
+        if len(features) > 4:
+            features = features[:4]
         
-        strides = (2, 2, 1)  # 深度维度不下采样
-        if len(features) - 1 < len(strides):
-            strides = strides[:len(features) - 1]
+        num_strides = len(features) - 1
+        strides = (2,) * num_strides
         
         # 使用MONAI的UNet并启用残差单元
         self.model = UNet(
-            spatial_dims=3,
+            spatial_dims=2,
             in_channels=config.in_channels,
             out_channels=config.out_channels,
             channels=features,
@@ -152,11 +155,16 @@ class ResUNetModel(CTEnhancementModel):
         )
     
     def forward(self, x):
-        return self.model(x)
+        # 输入形状: [B, C, H, W, D=1]
+        # 转换为2D: [B, C, H, W]
+        x_2d = x.squeeze(-1)
+        output_2d = self.model(x_2d)
+        # 恢复深度维度
+        return output_2d.unsqueeze(-1)
 
 
 class DenseUNetModel(CTEnhancementModel):
-    """密集连接UNet模型 - 使用MONAI的DenseNet"""
+    """密集连接UNet模型 - 使用MONAI的DenseNet（2D版本）"""
     
     def __init__(self, config: ModelConfig):
         super().__init__(config)
@@ -170,10 +178,11 @@ class DenseUNetModel(CTEnhancementModel):
         growth_rate = 16
         block_config = (4, 4, 4, 4)  # 4个密集块，每个4层
         
-        self.model = DenseNet(
-            spatial_dims=3,
+        # 使用num_classes=None来获取特征图而不是分类得分
+        self.densenet = DenseNet(
+            spatial_dims=2,
             in_channels=config.in_channels,
-            out_channels=config.out_channels,
+            out_channels=init_features,  # 输出特征通道数
             init_features=init_features,
             growth_rate=growth_rate,
             block_config=block_config,
@@ -181,100 +190,201 @@ class DenseUNetModel(CTEnhancementModel):
             act=config.activation.lower(),
             norm="batch" if config.use_batch_norm else None,
             dropout_prob=config.dropout,
+            num_classes=None,  # 关键：返回特征图
         )
+        
+        # 将特征图转换为输出通道
+        self.final_conv = nn.Conv2d(init_features, config.out_channels, kernel_size=1)
     
     def forward(self, x):
-        return self.model(x)
+        # 输入形状: [B, C, H, W, D=1]
+        # 转换为2D: [B, C, H, W]
+        x_2d = x.squeeze(-1)
+        features = self.densenet(x_2d)
+        output_2d = self.final_conv(features)
+        # 恢复深度维度
+        return output_2d.unsqueeze(-1)
 
 
 class MultiScaleModel(CTEnhancementModel):
-    """多尺度模型，结合不同分辨率特征 - 优化处理深度维度为1的情况"""
+    """改进的多尺度模型，使用U-Net进行多分辨率分解，添加残差连接和跳跃连接"""
     
     def __init__(self, config: ModelConfig):
         super().__init__(config)
         
-        # 调整特征层数以匹配深度维度
+        # 使用2D U-Net，因为深度维度为1
         features = config.features
-        if len(features) > 3:
-            features = features[:3]
+        if len(features) > 4:
+            features = features[:4]
         
-        strides = (2, 2, 1)  # 深度维度不下采样
-        if len(features) - 1 < len(strides):
-            strides = strides[:len(features) - 1]
+        # 三个尺度：原始、1/2、1/4
+        self.downsample2 = nn.AvgPool2d(2, stride=2)
+        self.downsample4 = nn.AvgPool2d(4, stride=4)
         
-        # 多尺度输入 - 对于深度维度为1，避免深度下采样
-        self.downsample2 = nn.AvgPool3d((2, 2, 1))  # 只在空间维度下采样
-        self.downsample4 = nn.AvgPool3d((4, 4, 1))  # 只在空间维度下采样
-        
-        # 主UNet
-        self.main_unet = UNet(
-            spatial_dims=3,
+        # 原始尺度UNet
+        self.unet_original = UNet(
+            spatial_dims=2,
             in_channels=config.in_channels,
-            out_channels=config.features[0],
+            out_channels=features[0],
             channels=features,
-            strides=strides,
+            strides=(2, 2, 2),
             num_res_units=2,
             dropout=config.dropout,
             norm="batch" if config.use_batch_norm else None,
             act=config.activation.lower(),
         )
         
-        # 辅助UNet（处理下采样特征）
-        aux_features = [f//2 for f in features]
-        self.aux_unet = UNet(
-            spatial_dims=3,
+        # 1/2尺度UNet
+        self.unet_half = UNet(
+            spatial_dims=2,
             in_channels=config.in_channels,
-            out_channels=config.features[0],
-            channels=aux_features,
-            strides=strides,
+            out_channels=features[0],
+            channels=[f//2 for f in features],
+            strides=(2, 2, 2),
+            num_res_units=2,
+            dropout=config.dropout,
+            norm="batch" if config.use_batch_norm else None,
+            act=config.activation.lower(),
+        )
+        
+        # 1/4尺度UNet
+        self.unet_quarter = UNet(
+            spatial_dims=2,
+            in_channels=config.in_channels,
+            out_channels=features[0],
+            channels=[f//4 for f in features],
+            strides=(2, 2, 2),
             num_res_units=1,
             dropout=config.dropout,
             norm="batch" if config.use_batch_norm else None,
             act=config.activation.lower(),
         )
         
-        # 特征融合
+        # 特征融合模块，包含残差连接
         self.fusion = nn.Sequential(
-            Convolution(
-                spatial_dims=3,
-                in_channels=config.features[0] * 2,
-                out_channels=config.features[0],
-                kernel_size=3,
-                strides=1,
-                padding=1,
-                norm="batch" if config.use_batch_norm else None,
-                act=config.activation.lower(),
-            ),
-            Convolution(
-                spatial_dims=3,
-                in_channels=config.features[0],
-                out_channels=config.out_channels,
-                kernel_size=1,
-                strides=1,
-                padding=0,
-                norm=None,
-                act=None,
-            )
+            nn.Conv2d(features[0] * 3, features[0] * 2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(features[0] * 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(features[0] * 2, features[0], kernel_size=3, padding=1),
+            nn.BatchNorm2d(features[0]),
+            nn.ReLU(inplace=True),
+        )
+        
+        # 输出层，添加残差连接
+        self.output = nn.Sequential(
+            nn.Conv2d(features[0] + config.in_channels, features[0], kernel_size=3, padding=1),
+            nn.BatchNorm2d(features[0]),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(features[0], config.out_channels, kernel_size=3, padding=1),
         )
     
     def forward(self, x):
-        # 原始尺度
-        main_feat = self.main_unet(x)
+        # 输入形状: [B, C, H, W, D=1]
+        x_2d = x.squeeze(-1)
         
-        # 下采样尺度
-        x_down = self.downsample2(x)
-        aux_feat = self.aux_unet(x_down)
+        # 多尺度输入
+        x_half = self.downsample2(x_2d)
+        x_quarter = self.downsample4(x_2d)
         
-        # 上采样辅助特征以匹配尺寸
-        aux_feat = nn.functional.interpolate(
-            aux_feat, size=main_feat.shape[2:], mode='trilinear', align_corners=True
+        # 各尺度特征提取
+        feat_original = self.unet_original(x_2d)
+        feat_half = self.unet_half(x_half)
+        feat_quarter = self.unet_quarter(x_quarter)
+        
+        # 上采样特征以匹配原始尺寸
+        feat_half_up = torch.nn.functional.interpolate(feat_half, size=feat_original.shape[2:], mode='bilinear', align_corners=True)
+        feat_quarter_up = torch.nn.functional.interpolate(feat_quarter, size=feat_original.shape[2:], mode='bilinear', align_corners=True)
+        
+        # 融合多尺度特征
+        fused = torch.cat([feat_original, feat_half_up, feat_quarter_up], dim=1)
+        fused = self.fusion(fused)
+        
+        # 残差连接：将原始输入与融合特征结合
+        combined = torch.cat([fused, x_2d], dim=1)
+        output_2d = self.output(combined)
+        
+        # 恢复深度维度
+        return output_2d.unsqueeze(-1)
+
+
+class WaveletDomainCNNModel(CTEnhancementModel):
+    """小波域CNN模型 - 在小波域中进行特征提取和处理"""
+    
+    def __init__(self, config: ModelConfig):
+        super().__init__(config)
+        
+        # 小波域处理模块
+        self.wavelet_processor = WaveletDomainProcessing(
+            in_channels=config.in_channels,
+            out_channels=config.out_channels,
+            wavelet_type='directional'  # 可选: 'directional', 'dwt', 'contourlet'
         )
         
-        # 融合特征
-        fused = torch.cat([main_feat, aux_feat], dim=1)
-        out = self.fusion(fused)
+        # 后续的卷积细化
+        self.refine = nn.Sequential(
+            nn.Conv2d(config.out_channels, config.features[0], kernel_size=3, padding=1),
+            nn.BatchNorm2d(config.features[0]),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(config.features[0], config.features[0] // 2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(config.features[0] // 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(config.features[0] // 2, config.out_channels, kernel_size=3, padding=1),
+        )
+    
+    def forward(self, x):
+        # 输入形状: [B, C, H, W, D=1]
+        # 转换为2D: [B, C, H, W]
+        x_2d = x.squeeze(-1)
         
-        return out
+        # 小波域处理
+        wavelet_enhanced = self.wavelet_processor(x_2d)
+        
+        # 细化
+        refined = self.refine(wavelet_enhanced)
+        
+        # 恢复深度维度
+        return refined.unsqueeze(-1)
+
+
+class FBPConvNetModel(CTEnhancementModel):
+    """FBPConvNet模型 - 先FBP后CNN去噪"""
+    
+    def __init__(self, config: ModelConfig):
+        super().__init__(config)
+        
+        # 模拟FBP的简单卷积层（实际应用中应使用真实的FBP）
+        self.fbp_simulator = nn.Sequential(
+            nn.Conv2d(config.in_channels, config.features[0], kernel_size=7, padding=3),
+            nn.BatchNorm2d(config.features[0]),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(config.features[0], config.in_channels, kernel_size=7, padding=3),
+        )
+        
+        # 去噪CNN（U-Net风格）
+        self.denoiser = UNet(
+            spatial_dims=2,
+            in_channels=config.in_channels,
+            out_channels=config.out_channels,
+            channels=config.features,
+            strides=(2, 2, 2),
+            num_res_units=2,
+            dropout=config.dropout,
+            norm="batch" if config.use_batch_norm else None,
+            act=config.activation.lower(),
+        )
+    
+    def forward(self, x):
+        # 输入形状: [B, C, H, W, D=1]
+        x_2d = x.squeeze(-1)
+        
+        # 模拟FBP重建
+        fbp_recon = self.fbp_simulator(x_2d)
+        
+        # CNN去噪
+        denoised = self.denoiser(fbp_recon)
+        
+        # 恢复深度维度
+        return denoised.unsqueeze(-1)
 
 
 def create_model(config: ModelConfig) -> CTEnhancementModel:
@@ -286,6 +396,8 @@ def create_model(config: ModelConfig) -> CTEnhancementModel:
         "ResUNet": ResUNetModel,
         "DenseUNet": DenseUNetModel,
         "MultiScale": MultiScaleModel,
+        "WaveletDomainCNN": WaveletDomainCNNModel,
+        "FBPConvNet": FBPConvNetModel,
     }
     
     if config.model_name not in model_map:

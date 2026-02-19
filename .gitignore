@@ -4,3 +4,4 @@ notebooks
 *.html
 Logs
 **/__pycache__
+configs/*.pdf

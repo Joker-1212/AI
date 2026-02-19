@@ -2,6 +2,7 @@
 工具函数
 """
 import os
+import time
 import torch
 import torch.nn as nn
 import numpy as np
@@ -13,17 +14,22 @@ import yaml
 
 def save_checkpoint(model: nn.Module, optimizer: torch.optim.Optimizer,
                     scheduler: Optional[torch.optim.lr_scheduler._LRScheduler],
-                    epoch: int, val_loss: float, filepath: str):
+                    epoch: int, val_loss: float, filepath: str,
+                    additional_info: Optional[Dict[str, Any]] = None):
     """保存检查点"""
     checkpoint = {
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'val_loss': val_loss,
+        'timestamp': time.time() if 'time' in locals() else 0,
     }
     
     if scheduler is not None:
         checkpoint['scheduler_state_dict'] = scheduler.state_dict()
+    
+    if additional_info is not None:
+        checkpoint.update(additional_info)
     
     torch.save(checkpoint, filepath)
     print(f"检查点已保存到 {filepath}")

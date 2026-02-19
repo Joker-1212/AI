@@ -1,0 +1,75 @@
+# 低剂量CT增强AI - 高级训练配置
+# 基于两篇论文研究的改进训练策略和损失函数
+
+data:
+  data_dir: "./data"
+  low_dose_dir: "qd"
+  full_dose_dir: "fd"
+  image_size: [512, 512, 1]  # 2D图像，深度为1
+  batch_size: 4
+  num_workers: 0  # Windows上设置为0
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  normalize: true
+  normalize_range: [-1000, 1000]
+
+model:
+  model_name: "WaveletDomainCNN"  # 可选: UNet2D, WaveletDomainCNN, FBPConvNet, MultiScaleModel
+  in_channels: 1
+  out_channels: 1
+  features: [32, 64, 128, 256]  # 特征通道数
+  dropout: 0.1
+  use_batch_norm: true
+  activation: "ReLU"
+
+training:
+  # 基础参数
+  learning_rate: 1e-4
+  num_epochs: 200
+  optimizer: "AdamW"  # 支持Adam, AdamW, SGD
+  weight_decay: 1e-5
+  
+  # 损失函数配置
+  loss_function: "MixedLoss"  # 可选: L1Loss, MSELoss, SSIMLoss, MixedLoss, MultiScaleLoss
+  loss_weights: [1.0, 0.5, 0.1]  # 混合损失权重: [L1, SSIM, Perceptual]
+  use_multi_scale_loss: true  # 启用多尺度损失
+  multi_scale_weights: [1.0, 0.5, 0.25]  # 多尺度损失权重
+  
+  # 学习率调度
+  scheduler: "CosineWarmRestarts"  # 可选: ReduceLROnPlateau, Cosine, Step, MultiStep, CosineWarmRestarts
+  patience: 15  # ReduceLROnPlateau的耐心值
+  min_lr: 1e-6
+  scheduler_factor: 0.5
+  scheduler_step_size: 20
+  scheduler_gamma: 0.5
+  scheduler_milestones: [50, 100, 150]
+  
+  # 高级训练策略
+  warmup_epochs: 5  # 学习率热身轮数
+  gradient_clip_value: 1.0  # 梯度裁剪值
+  gradient_clip_norm: null  # 梯度裁剪范数（可选）
+  use_early_stopping: true  # 启用早停
+  early_stopping_patience: 30  # 早停耐心值
+  
+  # 混合精度训练
+  use_amp: false  # 自动混合精度（需要GPU支持）
+  
+  # 日志和监控
+  log_interval: 10  # 批次日志间隔
+  save_interval: 10  # 检查点保存间隔（轮数）
+  monitor_metrics: ["loss", "psnr", "ssim"]  # 监控指标
+  
+  # 路径配置
+  checkpoint_dir: "./models/advanced_checkpoints"
+  log_dir: "./logs/advanced_training"
+  device: "cuda"  # 或 "cpu"
+
+# 训练策略说明:
+# 1. 混合损失函数: L1 + SSIM + 感知损失，平衡像素级和感知质量
+# 2. 多尺度损失: 在不同尺度上计算损失，提升细节恢复
+# 3. 学习率热身: 前5个epoch线性增加学习率，稳定训练
+# 4. 梯度裁剪: 防止梯度爆炸，提高训练稳定性
+# 5. 早停机制: 防止过拟合，自动停止训练
+# 6. CosineWarmRestarts调度器: 周期性重启学习率，帮助跳出局部最优
+# 7. AdamW优化器: 改进的Adam，更好的权重衰减处理
