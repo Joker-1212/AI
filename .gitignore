@@ -5,3 +5,5 @@ notebooks
 Logs
 **/__pycache__
 configs/*.pdf
+test*
+debug*
