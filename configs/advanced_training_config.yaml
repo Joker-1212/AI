@@ -65,6 +65,44 @@ training:
   log_dir: "./logs/advanced_training"
   device: "cuda"  # 或 "cpu"
 
+# 诊断配置
+diagnostics:
+  # 启用诊断功能
+  enable_diagnostics: true
+  
+  # 指标计算配置
+  compute_rmse: true
+  compute_mae: true
+  compute_psnr: true
+  compute_ssim: true
+  compute_ms_ssim: false  # 默认关闭，因为计算成本高
+  compute_lpips: false   # 默认关闭，需要GPU
+  
+  # 可视化配置
+  visualize_samples: 5  # 可视化样本数量
+  save_visualizations: true
+  visualization_dir: "./diagnostics/visualizations"
+  dpi: 150
+  visualization_frequency: 5  # 每N个epoch可视化一次
+  
+  # 模型诊断配置
+  check_gradients: true
+  check_weights: true
+  check_activations: false  # 可能影响性能
+  check_dead_relu: true
+  model_diagnosis_frequency: 10  # 每N个epoch诊断一次
+  
+  # 训练分析配置
+  analyze_overfitting: true
+  compute_loss_ratio: true
+  check_learning_rate: true
+  training_analysis_frequency: 5  # 每N个epoch分析一次
+  
+  # 报告配置
+  generate_html_report: true
+  generate_pdf_report: false
+  report_dir: "./diagnostics/reports"
+
 # 训练策略说明:
 # 1. 混合损失函数: L1 + SSIM + 感知损失，平衡像素级和感知质量
 # 2. 多尺度损失: 在不同尺度上计算损失，提升细节恢复
@@ -73,3 +111,4 @@ training:
 # 5. 早停机制: 防止过拟合，自动停止训练
 # 6. CosineWarmRestarts调度器: 周期性重启学习率，帮助跳出局部最优
 # 7. AdamW优化器: 改进的Adam，更好的权重衰减处理
+# 8. 诊断功能: 提供详细的训练监控和模型分析

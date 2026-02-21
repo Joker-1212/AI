@@ -1,17 +1,57 @@
-torch>=2.0.0
+# Low-dose CT Image Enhancement AI - Dependencies
+# Grouped by functionality for easier maintenance
+
+# Python Version Requirement
+############
+# Python 3.9+ required
+python>=3.9
+
+# Core ML Libraries
+#######
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Medical Image Processing
+########
 monai>=1.3.0
-numpy>=1.21.0
-pandas>=1.3.0
-scikit-image>=0.19.0
-matplotlib>=3.5.0
-jupyter>=1.0.0
-tqdm>=4.64.0
-pillow>=9.0.0
-scipy>=1.7.0
-pyyaml>=6.0
-tensorboard>=2.11.0
-opencv-python>=4.5.0
-pytorch-lightning>=2.0.0
 nibabel>=5.3.3
 pydicom>=3.0.1
+
+# Scientific Computing
+######
+numpy>=1.24.0
+scipy>=1.11.0
+pandas>=2.0.0
+
+# Image Processing
+######
+scikit-image>=0.22.0
+Pillow>=10.0.0
 PyWavelets>=1.9.0
+
+# Visualization
+#####
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Development Tools
+######
+tqdm>=4.65.0
+tensorboard>=2.13.0
+jupyter>=1.0.0
+ipykernel>=6.25.0
+ipywidgets>=8.0.0
+
+# Configuration & Utilities
+#######
+PyYAML>=6.0
+psutil>=5.9.0
+
+# Optional Dependencies
+######
+# Image quality assessment (requires GPU)
+lpips>=0.1.4
+# Computer vision (not used in project, but potentially useful)
+# opencv-python>=4.8.0
+# Machine learning utilities
+# scikit-learn>=1.3.0

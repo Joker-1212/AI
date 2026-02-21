@@ -12,11 +12,16 @@ from tqdm import tqdm
 import time
 import yaml
 from datetime import datetime
+from typing import Optional
 
 from ..Config.config import Config
 from ..Loader.data_loader import prepare_data_loaders, create_dummy_data
 from .models import create_model
 from ..Tools.utils import save_checkpoint, load_checkpoint, calculate_metrics
+from ..Tools.diagnostics import (
+    DiagnosticsConfig, ImageMetricsCalculator, ValidationVisualizer,
+    ModelDiagnostics, TrainingCurveAnalyzer
+)
 
 
 class Trainer:
@@ -75,6 +80,59 @@ class Trainer:
         self.val_psnrs = []
         self.val_ssims = []
         self.learning_rates = []
+        
+        # 诊断工具初始化
+        self.enable_diagnostics = getattr(config.diagnostics, 'enable_diagnostics', True)
+        if self.enable_diagnostics:
+            print("初始化诊断工具...")
+            # 创建诊断配置
+            self.diagnostics_config = DiagnosticsConfig(
+                enable_diagnostics=config.diagnostics.enable_diagnostics,
+                compute_rmse=getattr(config.diagnostics, 'compute_rmse', True),
+                compute_mae=getattr(config.diagnostics, 'compute_mae', True),
+                compute_psnr=getattr(config.diagnostics, 'compute_psnr', True),
+                compute_ssim=getattr(config.diagnostics, 'compute_ssim', True),
+                compute_ms_ssim=getattr(config.diagnostics, 'compute_ms_ssim', False),
+                compute_lpips=getattr(config.diagnostics, 'compute_lpips', False),
+                visualize_samples=getattr(config.diagnostics, 'visualize_samples', 5),
+                save_visualizations=getattr(config.diagnostics, 'save_visualizations', True),
+                visualization_dir=getattr(config.diagnostics, 'visualization_dir', "./diagnostics/visualizations"),
+                dpi=getattr(config.diagnostics, 'dpi', 150),
+                visualization_frequency=getattr(config.diagnostics, 'visualization_frequency', 5),
+                check_gradients=getattr(config.diagnostics, 'check_gradients', True),
+                check_weights=getattr(config.diagnostics, 'check_weights', True),
+                check_activations=getattr(config.diagnostics, 'check_activations', False),
+                check_dead_relu=getattr(config.diagnostics, 'check_dead_relu', True),
+                model_diagnosis_frequency=getattr(config.diagnostics, 'model_diagnosis_frequency', 10),
+                analyze_overfitting=getattr(config.diagnostics, 'analyze_overfitting', True),
+                compute_loss_ratio=getattr(config.diagnostics, 'compute_loss_ratio', True),
+                check_learning_rate=getattr(config.diagnostics, 'check_learning_rate', True),
+                training_analysis_frequency=getattr(config.diagnostics, 'training_analysis_frequency', 5),
+                generate_html_report=getattr(config.diagnostics, 'generate_html_report', True),
+                generate_pdf_report=getattr(config.diagnostics, 'generate_pdf_report', False),
+                report_dir=getattr(config.diagnostics, 'report_dir', "./diagnostics/reports")
+            )
+            
+            # 初始化诊断工具
+            self.metrics_calculator = ImageMetricsCalculator(self.diagnostics_config)
+            self.visualizer = ValidationVisualizer(self.diagnostics_config)
+            self.model_diagnostics = ModelDiagnostics(self.diagnostics_config)
+            self.training_analyzer = TrainingCurveAnalyzer(self.diagnostics_config)
+            
+            # 诊断状态
+            self.detailed_metrics_history = []
+            self.model_diagnosis_history = []
+            self.training_analysis_history = []
+            
+            print(f"诊断工具已初始化: 可视化频率={self.diagnostics_config.visualization_frequency} epoch, "
+                  f"模型诊断频率={self.diagnostics_config.model_diagnosis_frequency} epoch")
+        else:
+            self.diagnostics_config = None
+            self.metrics_calculator = None
+            self.visualizer = None
+            self.model_diagnostics = None
+            self.training_analyzer = None
+            print("诊断功能已禁用")
         
         print(f"设备: {self.device}")
         print(f"模型: {config.model.model_name}")
@@ -328,7 +386,171 @@ class Trainer:
         self.learning_rates.append(current_lr)
         self.writer.add_scalar("train/learning_rate", current_lr, self.current_epoch)
         
+        # 执行模型诊断（如果启用）
+        if (self.enable_diagnostics and self.model_diagnostics and
+            self.current_epoch % self.diagnostics_config.model_diagnosis_frequency == 0):
+            self._perform_model_diagnosis(avg_loss)
+        
         return avg_loss
+    
+    def _perform_model_diagnosis(self, train_loss):
+        """执行模型诊断"""
+        try:
+            print(f"执行模型诊断 (epoch {self.current_epoch})...")
+            
+            # 创建诊断目录
+            diag_dir = os.path.join(
+                self.diagnostics_config.report_dir,
+                f"epoch_{self.current_epoch:04d}"
+            )
+            os.makedirs(diag_dir, exist_ok=True)
+            
+            # 1. 分析梯度问题
+            if self.diagnostics_config.check_gradients:
+                # 需要重新计算损失以获取梯度
+                self.model.train()
+                sample_batch = next(iter(self.train_loader))
+                low_dose = sample_batch[0].to(self.device)
+                full_dose = sample_batch[1].to(self.device)
+                
+                self.optimizer.zero_grad()
+                enhanced = self.model(low_dose)
+                loss = self.criterion(enhanced, full_dose)
+                
+                gradient_report = self.model_diagnostics.analyze_gradients(
+                    model=self.model,
+                    loss=loss,
+                    compute_norms=True,
+                    detect_outliers=True
+                )
+                
+                # 记录梯度问题
+                if gradient_report.get('gradient_vanishing', False):
+                    print(f"  警告: 检测到梯度消失 (总梯度范数: {gradient_report.get('total_l2_norm', 0):.6f})")
+                if gradient_report.get('gradient_exploding', False):
+                    print(f"  警告: 检测到梯度爆炸 (总梯度范数: {gradient_report.get('total_l2_norm', 0):.6f})")
+                
+                # 保存梯度报告
+                gradient_report_path = os.path.join(diag_dir, "gradient_report.json")
+                with open(gradient_report_path, 'w') as f:
+                    import json
+                    # 转换numpy类型为Python原生类型
+                    def convert_to_serializable(obj):
+                        if isinstance(obj, (np.integer, np.floating)):
+                            return float(obj)
+                        elif isinstance(obj, np.ndarray):
+                            return obj.tolist()
+                        elif isinstance(obj, dict):
+                            return {k: convert_to_serializable(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [convert_to_serializable(item) for item in obj]
+                        else:
+                            return obj
+                    
+                    serializable_report = convert_to_serializable(gradient_report)
+                    json.dump(serializable_report, f, indent=2)
+                
+                # 记录到TensorBoard
+                if 'total_l2_norm' in gradient_report:
+                    self.writer.add_scalar(
+                        "diagnostics/gradient_total_norm",
+                        gradient_report['total_l2_norm'],
+                        self.current_epoch
+                    )
+                if 'zero_gradient_ratio' in gradient_report:
+                    self.writer.add_scalar(
+                        "diagnostics/gradient_zero_ratio",
+                        gradient_report['zero_gradient_ratio'],
+                        self.current_epoch
+                    )
+            
+            # 2. 分析权重分布
+            if self.diagnostics_config.check_weights:
+                weight_report = self.model_diagnostics.analyze_weights(
+                    model=self.model,
+                    previous_weights=None,  # 可以扩展为跟踪权重变化
+                    detect_anomalies=True
+                )
+                
+                # 检查权重问题
+                if 'weight_issues' in weight_report and weight_report['weight_issues']:
+                    for issue in weight_report['weight_issues']:
+                        print(f"  警告: {issue}")
+                
+                # 保存权重报告
+                weight_report_path = os.path.join(diag_dir, "weight_report.json")
+                with open(weight_report_path, 'w') as f:
+                    import json
+                    serializable_report = convert_to_serializable(weight_report)
+                    json.dump(serializable_report, f, indent=2)
+                
+                # 记录到TensorBoard
+                if 'global_stats' in weight_report:
+                    stats = weight_report['global_stats']
+                    if 'mean' in stats:
+                        self.writer.add_scalar(
+                            "diagnostics/weight_mean",
+                            stats['mean'],
+                            self.current_epoch
+                        )
+                    if 'std' in stats:
+                        self.writer.add_scalar(
+                            "diagnostics/weight_std",
+                            stats['std'],
+                            self.current_epoch
+                        )
+            
+            # 3. 检测dead ReLU神经元
+            if self.diagnostics_config.check_dead_relu:
+                # 收集样本输入
+                sample_inputs = []
+                for i, (low_dose, _) in enumerate(self.train_loader):
+                    if i >= 3:  # 使用3个批次
+                        break
+                    sample_inputs.append(low_dose.to(self.device))
+                
+                dead_relu_report = self.model_diagnostics.detect_dead_relu_neurons(
+                    model=self.model,
+                    sample_inputs=sample_inputs,
+                    threshold=1e-6
+                )
+                
+                # 检查dead ReLU问题
+                if 'overall_dead_ratio' in dead_relu_report:
+                    dead_ratio = dead_relu_report['overall_dead_ratio']
+                    if dead_ratio > 0.3:
+                        print(f"  警告: Dead ReLU比例较高 ({dead_ratio:.1%})")
+                    else:
+                        print(f"  Dead ReLU比例: {dead_ratio:.1%}")
+                
+                # 保存dead ReLU报告
+                dead_relu_report_path = os.path.join(diag_dir, "dead_relu_report.json")
+                with open(dead_relu_report_path, 'w') as f:
+                    import json
+                    serializable_report = convert_to_serializable(dead_relu_report)
+                    json.dump(serializable_report, f, indent=2)
+                
+                # 记录到TensorBoard
+                if 'overall_dead_ratio' in dead_relu_report:
+                    self.writer.add_scalar(
+                        "diagnostics/dead_relu_ratio",
+                        dead_relu_report['overall_dead_ratio'],
+                        self.current_epoch
+                    )
+            
+            # 保存诊断历史
+            self.model_diagnosis_history.append({
+                'epoch': self.current_epoch,
+                'timestamp': time.time(),
+                'diagnosis_dir': diag_dir
+            })
+            
+            print(f"模型诊断报告已保存到: {diag_dir}")
+            
+        except Exception as e:
+            print(f"模型诊断失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def validate(self):
         """验证"""
@@ -337,8 +559,13 @@ class Trainer:
         total_psnr = 0.0
         total_ssim = 0.0
         
+        # 存储批量数据用于可视化
+        visualization_batch = None
+        visualization_enhanced = None
+        visualization_target = None
+        
         with torch.no_grad():
-            for low_dose, full_dose in tqdm(self.val_loader, desc="验证"):
+            for batch_idx, (low_dose, full_dose) in enumerate(tqdm(self.val_loader, desc="验证")):
                 low_dose = low_dose.to(self.device)
                 full_dose = full_dose.to(self.device)
                 
@@ -350,6 +577,12 @@ class Trainer:
                 psnr, ssim = calculate_metrics(enhanced, full_dose)
                 total_psnr += psnr
                 total_ssim += ssim
+                
+                # 收集第一个批次用于可视化
+                if batch_idx == 0 and self.enable_diagnostics and self.visualizer:
+                    visualization_batch = low_dose
+                    visualization_enhanced = enhanced
+                    visualization_target = full_dose
         
         avg_loss = total_loss / len(self.val_loader)
         avg_psnr = total_psnr / len(self.val_loader)
@@ -360,7 +593,106 @@ class Trainer:
         self.writer.add_scalar("val/psnr", avg_psnr, self.current_epoch)
         self.writer.add_scalar("val/ssim", avg_ssim, self.current_epoch)
         
+        # 执行验证集可视化（如果启用）
+        if (self.enable_diagnostics and self.visualizer and visualization_batch is not None and
+            self.current_epoch % self.diagnostics_config.visualization_frequency == 0):
+            self._perform_validation_visualization(
+                visualization_batch, visualization_enhanced, visualization_target
+            )
+        
+        # 计算详细指标（如果启用）
+        if self.enable_diagnostics and self.metrics_calculator:
+            self._calculate_detailed_metrics(visualization_enhanced, visualization_target)
+        
         return avg_loss, avg_psnr, avg_ssim
+    
+    def _perform_validation_visualization(self, low_dose, enhanced, full_dose):
+        """执行验证集可视化"""
+        try:
+            print(f"执行验证集可视化 (epoch {self.current_epoch})...")
+            
+            # 创建可视化目录
+            vis_dir = os.path.join(
+                self.diagnostics_config.visualization_dir,
+                f"epoch_{self.current_epoch:04d}"
+            )
+            os.makedirs(vis_dir, exist_ok=True)
+            
+            # 生成可视化
+            figures = self.visualizer.visualize_batch(
+                low_dose_batch=low_dose,
+                enhanced_batch=enhanced,
+                full_dose_batch=full_dose,
+                max_samples=self.diagnostics_config.visualize_samples,
+                save_dir=vis_dir,
+                prefix=f"epoch_{self.current_epoch:04d}"
+            )
+            
+            # 记录到TensorBoard
+            if figures and len(figures) > 0:
+                try:
+                    import matplotlib.pyplot as plt
+                    from torch.utils.tensorboard.summary import figure_to_image
+                    
+                    fig = figures[0]
+                    img = figure_to_image(fig)
+                    self.writer.add_image(
+                        "validation/visualization",
+                        img,
+                        self.current_epoch
+                    )
+                    plt.close(fig)
+                except ImportError:
+                    print("警告: 无法将可视化图像记录到TensorBoard")
+            
+            print(f"验证集可视化已保存到: {vis_dir}")
+            
+        except Exception as e:
+            print(f"验证集可视化失败: {e}")
+    
+    def _calculate_detailed_metrics(self, enhanced, full_dose):
+        """计算详细指标"""
+        try:
+            if enhanced is None or full_dose is None:
+                return
+            
+            print(f"计算详细指标 (epoch {self.current_epoch})...")
+            
+            # 计算详细指标
+            detailed_metrics = self.metrics_calculator.calculate_all_metrics_batch(
+                pred=enhanced,
+                target=full_dose,
+                data_range=1.0,
+                use_gpu=(self.device.type == 'cuda')
+            )
+            
+            # 记录到TensorBoard
+            for metric_name, metric_value in detailed_metrics.items():
+                if isinstance(metric_value, (int, float)):
+                    self.writer.add_scalar(
+                        f"val/detailed/{metric_name}",
+                        metric_value,
+                        self.current_epoch
+                    )
+            
+            # 保存到历史记录
+            self.detailed_metrics_history.append({
+                'epoch': self.current_epoch,
+                'metrics': detailed_metrics
+            })
+            
+            # 打印关键指标
+            if 'rmse' in detailed_metrics:
+                print(f"  RMSE: {detailed_metrics['rmse']:.4f} ± {detailed_metrics.get('rmse_std', 0):.4f}")
+            if 'mae' in detailed_metrics:
+                print(f"  MAE: {detailed_metrics['mae']:.4f} ± {detailed_metrics.get('mae_std', 0):.4f}")
+            if 'psnr' in detailed_metrics:
+                print(f"  PSNR: {detailed_metrics['psnr']:.2f} dB ± {detailed_metrics.get('psnr_std', 0):.2f}")
+            if 'ssim' in detailed_metrics:
+                print(f"  SSIM: {detailed_metrics['ssim']:.4f} ± {detailed_metrics.get('ssim_std', 0):.4f}")
+            
+        except Exception as e:
+            print(f"详细指标计算失败: {e}")
     
     def train(self):
         """主训练循环"""
@@ -401,6 +733,12 @@ class Trainer:
                   f"PSNR={val_psnr:.2f} dB, "
                   f"SSIM={val_ssim:.4f}, "
                   f"学习率={current_lr:.6f}")
+            
+            # 执行训练曲线分析（如果启用）
+            if (self.enable_diagnostics and self.training_analyzer and
+                epoch % self.diagnostics_config.training_analysis_frequency == 0 and
+                len(self.train_losses) >= 5):  # 至少有5个epoch的数据
+                self._perform_training_curve_analysis()
             
             # 检查早停
             if self._check_early_stopping(val_loss):
@@ -447,6 +785,113 @@ class Trainer:
         self.writer.close()
         
         return self.train_losses, self.val_losses, self.val_psnrs, self.val_ssims
+    
+    def _perform_training_curve_analysis(self):
+        """执行训练曲线分析"""
+        try:
+            if len(self.train_losses) < 5 or len(self.val_losses) < 5:
+                return
+            
+            print(f"执行训练曲线分析 (epoch {self.current_epoch})...")
+            
+            # 分析过拟合/欠拟合
+            overfitting_report = self.training_analyzer.analyze_overfitting(
+                train_losses=self.train_losses,
+                val_losses=self.val_losses,
+                epochs=list(range(1, len(self.train_losses) + 1))
+            )
+            
+            # 打印分析结果
+            if overfitting_report.get('is_overfitting', False):
+                print(f"  警告: 检测到过拟合 (损失比率: {overfitting_report.get('loss_ratio', 0):.2f})")
+                print(f"  建议: 增加正则化、早停、数据增强或减少模型复杂度")
+            elif overfitting_report.get('is_underfitting', False):
+                print(f"  警告: 检测到欠拟合 (训练损失: {overfitting_report.get('train_loss_final', 0):.4f})")
+                print(f"  建议: 增加模型容量、训练更长时间、减少正则化")
+            else:
+                print(f"  训练状态: 正常 (损失比率: {overfitting_report.get('loss_ratio', 0):.2f})")
+            
+            # 记录到TensorBoard
+            if 'loss_ratio' in overfitting_report:
+                self.writer.add_scalar(
+                    "diagnostics/loss_ratio",
+                    overfitting_report['loss_ratio'],
+                    self.current_epoch
+                )
+            
+            if 'overfitting_gap' in overfitting_report:
+                self.writer.add_scalar(
+                    "diagnostics/overfitting_gap",
+                    overfitting_report['overfitting_gap'],
+                    self.current_epoch
+                )
+            
+            # 分析学习率
+            if self.diagnostics_config.check_learning_rate and len(self.learning_rates) >= 5:
+                lr_analysis = self._analyze_learning_rate()
+                if lr_analysis:
+                    print(f"  学习率分析: {lr_analysis}")
+            
+            # 保存分析报告
+            analysis_dir = os.path.join(
+                self.diagnostics_config.report_dir,
+                f"epoch_{self.current_epoch:04d}"
+            )
+            os.makedirs(analysis_dir, exist_ok=True)
+            
+            analysis_report = {
+                'epoch': self.current_epoch,
+                'timestamp': time.time(),
+                'num_epochs_analyzed': len(self.train_losses),
+                'overfitting_analysis': overfitting_report,
+                'train_losses': self.train_losses,
+                'val_losses': self.val_losses,
+                'val_psnrs': self.val_psnrs,
+                'val_ssims': self.val_ssims,
+                'learning_rates': self.learning_rates
+            }
+            
+            analysis_report_path = os.path.join(analysis_dir, "training_analysis.json")
+            with open(analysis_report_path, 'w') as f:
+                import json
+                json.dump(analysis_report, f, indent=2)
+            
+            # 保存到历史记录
+            self.training_analysis_history.append({
+                'epoch': self.current_epoch,
+                'analysis': overfitting_report,
+                'report_path': analysis_report_path
+            })
+            
+            print(f"训练曲线分析报告已保存到: {analysis_report_path}")
+            
+        except Exception as e:
+            print(f"训练曲线分析失败: {e}")
+    
+    def _analyze_learning_rate(self):
+        """分析学习率是否合适"""
+        if len(self.learning_rates) < 5:
+            return None
+        
+        current_lr = self.learning_rates[-1]
+        avg_lr = sum(self.learning_rates) / len(self.learning_rates)
+        
+        # 检查学习率是否过小
+        if current_lr < 1e-6:
+            return "学习率过小，可能收敛缓慢"
+        
+        # 检查学习率是否过大
+        if current_lr > 1e-2:
+            return "学习率过大，可能导致训练不稳定"
+        
+        # 检查学习率下降是否过快
+        if len(self.learning_rates) >= 10:
+            recent_lrs = self.learning_rates[-10:]
+            lr_decline = (recent_lrs[0] - recent_lrs[-1]) / recent_lrs[0]
+            if lr_decline > 0.9:
+                return "学习率下降过快，可能过早停止学习"
+        
+        return f"学习率合适 ({current_lr:.6f})"
     
     def _save_training_history(self):
         """保存训练历史到文件"""
@@ -547,6 +992,291 @@ class Trainer:
         print(f"测试结果: 损失={avg_loss:.4f}, PSNR={avg_psnr:.2f} dB, SSIM={avg_ssim:.4f}")
         
         return avg_loss, avg_psnr, avg_ssim
+    
+    # ===== 诊断配置控制方法 =====
+    
+    def set_diagnostics_enabled(self, enable: bool = True):
+        """启用或禁用诊断功能"""
+        self.enable_diagnostics = enable
+        if enable and not hasattr(self, 'metrics_calculator'):
+            # 重新初始化诊断工具
+            self._initialize_diagnostics()
+        print(f"诊断功能已{'启用' if enable else '禁用'}")
+    
+    def _initialize_diagnostics(self):
+        """初始化诊断工具（内部方法）"""
+        if not hasattr(self.config, 'diagnostics'):
+            print("警告: 配置中没有诊断配置，使用默认配置")
+            from ..Tools.diagnostics import DiagnosticsConfig
+            self.diagnostics_config = DiagnosticsConfig()
+        else:
+            self.diagnostics_config = DiagnosticsConfig(
+                enable_diagnostics=self.config.diagnostics.enable_diagnostics,
+                compute_rmse=getattr(self.config.diagnostics, 'compute_rmse', True),
+                compute_mae=getattr(self.config.diagnostics, 'compute_mae', True),
+                compute_psnr=getattr(self.config.diagnostics, 'compute_psnr', True),
+                compute_ssim=getattr(self.config.diagnostics, 'compute_ssim', True),
+                compute_ms_ssim=getattr(self.config.diagnostics, 'compute_ms_ssim', False),
+                compute_lpips=getattr(self.config.diagnostics, 'compute_lpips', False),
+                visualize_samples=getattr(self.config.diagnostics, 'visualize_samples', 5),
+                save_visualizations=getattr(self.config.diagnostics, 'save_visualizations', True),
+                visualization_dir=getattr(self.config.diagnostics, 'visualization_dir', "./diagnostics/visualizations"),
+                dpi=getattr(self.config.diagnostics, 'dpi', 150),
+                visualization_frequency=getattr(self.config.diagnostics, 'visualization_frequency', 5),
+                check_gradients=getattr(self.config.diagnostics, 'check_gradients', True),
+                check_weights=getattr(self.config.diagnostics, 'check_weights', True),
+                check_activations=getattr(self.config.diagnostics, 'check_activations', False),
+                check_dead_relu=getattr(self.config.diagnostics, 'check_dead_relu', True),
+                model_diagnosis_frequency=getattr(self.config.diagnostics, 'model_diagnosis_frequency', 10),
+                analyze_overfitting=getattr(self.config.diagnostics, 'analyze_overfitting', True),
+                compute_loss_ratio=getattr(self.config.diagnostics, 'compute_loss_ratio', True),
+                check_learning_rate=getattr(self.config.diagnostics, 'check_learning_rate', True),
+                training_analysis_frequency=getattr(self.config.diagnostics, 'training_analysis_frequency', 5),
+                generate_html_report=getattr(self.config.diagnostics, 'generate_html_report', True),
+                generate_pdf_report=getattr(self.config.diagnostics, 'generate_pdf_report', False),
+                report_dir=getattr(self.config.diagnostics, 'report_dir', "./diagnostics/reports")
+            )
+        
+        # 初始化诊断工具
+        self.metrics_calculator = ImageMetricsCalculator(self.diagnostics_config)
+        self.visualizer = ValidationVisualizer(self.diagnostics_config)
+        self.model_diagnostics = ModelDiagnostics(self.diagnostics_config)
+        self.training_analyzer = TrainingCurveAnalyzer(self.diagnostics_config)
+        
+        # 诊断状态
+        self.detailed_metrics_history = []
+        self.model_diagnosis_history = []
+        self.training_analysis_history = []
+    
+    def update_diagnostics_config(self, **kwargs):
+        """更新诊断配置"""
+        if not hasattr(self, 'diagnostics_config') or self.diagnostics_config is None:
+            print("错误: 诊断配置未初始化")
+            return
+        
+        for key, value in kwargs.items():
+            if hasattr(self.diagnostics_config, key):
+                setattr(self.diagnostics_config, key, value)
+                print(f"更新诊断配置: {key} = {value}")
+            else:
+                print(f"警告: 诊断配置中没有属性 '{key}'")
+    
+    def get_diagnostics_summary(self):
+        """获取诊断功能摘要"""
+        if not self.enable_diagnostics:
+            return {"diagnostics_enabled": False}
+        
+        summary = {
+            "diagnostics_enabled": True,
+            "metrics_calculator": self.metrics_calculator is not None,
+            "visualizer": self.visualizer is not None,
+            "model_diagnostics": self.model_diagnostics is not None,
+            "training_analyzer": self.training_analyzer is not None,
+            "config": {
+                "visualization_frequency": self.diagnostics_config.visualization_frequency,
+                "model_diagnosis_frequency": self.diagnostics_config.model_diagnosis_frequency,
+                "training_analysis_frequency": self.diagnostics_config.training_analysis_frequency,
+                "compute_rmse": self.diagnostics_config.compute_rmse,
+                "compute_mae": self.diagnostics_config.compute_mae,
+                "compute_psnr": self.diagnostics_config.compute_psnr,
+                "compute_ssim": self.diagnostics_config.compute_ssim,
+                "check_gradients": self.diagnostics_config.check_gradients,
+                "check_weights": self.diagnostics_config.check_weights,
+                "check_dead_relu": self.diagnostics_config.check_dead_relu,
+                "analyze_overfitting": self.diagnostics_config.analyze_overfitting
+            },
+            "history": {
+                "detailed_metrics": len(self.detailed_metrics_history),
+                "model_diagnosis": len(self.model_diagnosis_history),
+                "training_analysis": len(self.training_analysis_history)
+            }
+        }
+        return summary
+    
+    def generate_diagnostics_report(self, output_dir: Optional[str] = None):
+        """生成诊断报告"""
+        if not self.enable_diagnostics:
+            print("错误: 诊断功能未启用")
+            return
+        
+        try:
+            from ..Tools.diagnostics import DiagnosticsCLI
+            import json
+            
+            if output_dir is None:
+                output_dir = self.diagnostics_config.report_dir
+            
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # 收集诊断数据
+            diagnostic_data = {
+                "training_summary": {
+                    "total_epochs": len(self.train_losses),
+                    "best_val_loss": self.best_val_loss,
+                    "best_val_psnr": max(self.val_psnrs) if self.val_psnrs else 0,
+                    "best_val_ssim": max(self.val_ssims) if self.val_ssims else 0
+                },
+                "detailed_metrics": self.detailed_metrics_history,
+                "model_diagnosis": self.model_diagnosis_history,
+                "training_analysis": self.training_analysis_history,
+                "config": self.get_diagnostics_summary()["config"]
+            }
+            
+            # 保存为JSON
+            report_path = os.path.join(output_dir, "diagnostics_report.json")
+            with open(report_path, 'w') as f:
+                json.dump(diagnostic_data, f, indent=2, default=str)
+            
+            print(f"诊断报告已保存到: {report_path}")
+            
+            # 如果启用HTML报告，生成HTML
+            if self.diagnostics_config.generate_html_report:
+                try:
+                    cli = DiagnosticsCLI()
+                    html_report = cli.generate_html_report(diagnostic_data)
+                    html_path = os.path.join(output_dir, "diagnostics_report.html")
+                    with open(html_path, 'w', encoding='utf-8') as f:
+                        f.write(html_report)
+                    print(f"HTML诊断报告已保存到: {html_path}")
+                except Exception as e:
+                    print(f"生成HTML报告失败: {e}")
+            
+            return report_path
+            
+        except Exception as e:
+            print(f"生成诊断报告失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # ===== 性能优化方法 =====
+    
+    def optimize_diagnostics_performance(self):
+        """优化诊断性能"""
+        if not self.enable_diagnostics:
+            return
+        
+        print("优化诊断性能...")
+        
+        # 1. 调整诊断频率以避免影响训练速度
+        if len(self.train_losses) > 50:  # 训练后期减少诊断频率
+            if self.diagnostics_config.visualization_frequency < 10:
+                self.diagnostics_config.visualization_frequency = 10
+                print(f"  调整可视化频率为每 {self.diagnostics_config.visualization_frequency} 个epoch")
+            
+            if self.diagnostics_config.model_diagnosis_frequency < 20:
+                self.diagnostics_config.model_diagnosis_frequency = 20
+                print(f"  调整模型诊断频率为每 {self.diagnostics_config.model_diagnosis_frequency} 个epoch")
+        
+        # 2. 禁用计算成本高的指标（如果训练速度过慢）
+        if hasattr(self, 'train_losses') and len(self.train_losses) > 0:
+            avg_epoch_time = self._estimate_epoch_time()
+            if avg_epoch_time > 300:  # 如果每个epoch超过5分钟
+                if self.diagnostics_config.compute_ms_ssim:
+                    self.diagnostics_config.compute_ms_ssim = False
+                    print("  禁用MS-SSIM计算（计算成本高）")
+                
+                if self.diagnostics_config.compute_lpips:
+                    self.diagnostics_config.compute_lpips = False
+                    print("  禁用LPIPS计算（计算成本高）")
+                
+                if self.diagnostics_config.check_activations:
+                    self.diagnostics_config.check_activations = False
+                    print("  禁用激活值检查（影响性能）")
+        
+        # 3. 减少可视化样本数量
+        if self.diagnostics_config.visualize_samples > 3:
+            self.diagnostics_config.visualize_samples = 3
+            print(f"  减少可视化样本数量为 {self.diagnostics_config.visualize_samples}")
+    
+    def _estimate_epoch_time(self):
+        """估计每个epoch的平均训练时间"""
+        if not hasattr(self, '_epoch_times') or len(self._epoch_times) < 3:
+            return 0
+        
+        # 计算最近几个epoch的平均时间
+        recent_times = self._epoch_times[-5:] if len(self._epoch_times) >= 5 else self._epoch_times
+        return sum(recent_times) / len(recent_times)
+    
+    def enable_performance_mode(self, enable: bool = True):
+        """启用性能模式（减少诊断开销）"""
+        if not self.enable_diagnostics:
+            return
+        
+        if enable:
+            print("启用诊断性能模式...")
+            # 保存原始配置
+            if not hasattr(self, '_original_diagnostics_config'):
+                self._original_diagnostics_config = {
+                    'visualization_frequency': self.diagnostics_config.visualization_frequency,
+                    'model_diagnosis_frequency': self.diagnostics_config.model_diagnosis_frequency,
+                    'training_analysis_frequency': self.diagnostics_config.training_analysis_frequency,
+                    'compute_ms_ssim': self.diagnostics_config.compute_ms_ssim,
+                    'compute_lpips': self.diagnostics_config.compute_lpips,
+                    'check_activations': self.diagnostics_config.check_activations,
+                    'visualize_samples': self.diagnostics_config.visualize_samples
+                }
+            
+            # 应用性能优化配置
+            self.diagnostics_config.visualization_frequency = max(10, self.diagnostics_config.visualization_frequency)
+            self.diagnostics_config.model_diagnosis_frequency = max(20, self.diagnostics_config.model_diagnosis_frequency)
+            self.diagnostics_config.training_analysis_frequency = max(10, self.diagnostics_config.training_analysis_frequency)
+            self.diagnostics_config.compute_ms_ssim = False
+            self.diagnostics_config.compute_lpips = False
+            self.diagnostics_config.check_activations = False
+            self.diagnostics_config.visualize_samples = min(3, self.diagnostics_config.visualize_samples)
+            
+            print("  性能模式已启用：减少诊断频率，禁用高成本计算")
+        else:
+            # 恢复原始配置
+            if hasattr(self, '_original_diagnostics_config'):
+                print("恢复原始诊断配置...")
+                for key, value in self._original_diagnostics_config.items():
+                    setattr(self.diagnostics_config, key, value)
+                delattr(self, '_original_diagnostics_config')
+                print("  原始配置已恢复")
+    
+    def measure_diagnostics_overhead(self):
+        """测量诊断功能的时间开销"""
+        if not self.enable_diagnostics:
+            return {"diagnostics_enabled": False}
+        
+        import time
+        overhead_report = {
+            "diagnostics_enabled": True,
+            "metrics_calculation_time": 0,
+            "visualization_time": 0,
+            "model_diagnosis_time": 0,
+            "training_analysis_time": 0,
+            "total_overhead_per_epoch": 0
+        }
+        
+        # 这里可以添加实际测量代码
+        # 在实际实现中，可以记录每个诊断功能的时间开销
+        
+        return overhead_report
+    
+    def print_performance_tips(self):
+        """打印性能优化建议"""
+        print("=" * 60)
+        print("诊断性能优化建议:")
+        print("=" * 60)
+        print("1. 调整诊断频率:")
+        print("   - 可视化频率: 每 {} 个epoch".format(self.diagnostics_config.visualization_frequency))
+        print("   - 模型诊断频率: 每 {} 个epoch".format(self.diagnostics_config.model_diagnosis_frequency))
+        print("   - 训练分析频率: 每 {} 个epoch".format(self.diagnostics_config.training_analysis_frequency))
+        print()
+        print("2. 禁用高成本计算:")
+        print("   - MS-SSIM计算: {}".format("启用" if self.diagnostics_config.compute_ms_ssim else "禁用"))
+        print("   - LPIPS计算: {}".format("启用" if self.diagnostics_config.compute_lpips else "禁用"))
+        print("   - 激活值检查: {}".format("启用" if self.diagnostics_config.check_activations else "禁用"))
+        print()
+        print("3. 资源使用:")
+        print("   - 可视化样本数量: {}".format(self.diagnostics_config.visualize_samples))
+        print()
+        print("4. 性能模式:")
+        print("   - 使用 trainer.enable_performance_mode(True) 启用性能模式")
+        print("   - 使用 trainer.optimize_diagnostics_performance() 自动优化")
+        print("=" * 60)
 
 
 def main():

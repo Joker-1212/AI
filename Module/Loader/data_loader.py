@@ -270,20 +270,20 @@ def prepare_data_loaders(config: DataConfig):
 def create_dummy_data(config: DataConfig, num_samples: int = 10):
     """
     创建虚拟数据用于测试
-    创建3D数据以避免RandZoomD深度维度为0的问题
+    使用config.image_size中的深度维度
     """
     os.makedirs(os.path.join(config.data_dir, config.low_dose_dir), exist_ok=True)
     os.makedirs(os.path.join(config.data_dir, config.full_dose_dir), exist_ok=True)
     
-    # 获取深度维度，至少为2以避免RandZoomD问题
+    # 获取图像尺寸
     if len(config.image_size) >= 3:
-        d = max(config.image_size[2], 2)
+        h, w, d = config.image_size
     else:
-        d = 2  # 默认深度维度
+        h, w = config.image_size[:2]
+        d = 1  # 默认深度维度
     
     for i in range(num_samples):
         # 创建随机3D CT图像（模拟低剂量和高剂量）
-        h, w = config.image_size[:2]
         
         # 低剂量：添加更多噪声
         low_dose = np.random.randn(h, w, d) * 0.3 + 0.5
