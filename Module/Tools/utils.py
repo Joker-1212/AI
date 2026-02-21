@@ -180,7 +180,22 @@ def save_config(config: Any, filepath: str):
 
 
 def load_config(filepath: str, config_class: Any) -> Any:
-    """从YAML文件加载配置"""
+    """从YAML文件加载配置
+    
+    注意: 现在推荐使用 Config.from_yaml() 方法
+    """
+    import warnings
+    warnings.warn(
+        "load_config() is deprecated. Use Config.from_yaml() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
+    # 尝试使用新的 from_yaml 方法
+    if hasattr(config_class, 'from_yaml'):
+        return config_class.from_yaml(filepath)
+    
+    # 回退到旧实现
     with open(filepath, 'r') as f:
         config_dict = yaml.safe_load(f)
     

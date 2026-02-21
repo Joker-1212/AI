@@ -186,7 +186,7 @@ def get_transforms(config: DataConfig, is_train: bool = True):
     return Compose(transforms)
 
 
-def prepare_data_loaders(config: DataConfig):
+def prepare_data_loaders(config: DataConfig) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
     准备训练、验证和测试数据加载器
     """

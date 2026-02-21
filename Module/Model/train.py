@@ -142,7 +142,7 @@ class Trainer:
         if self.config.training.use_multi_scale_loss:
             print(f"使用多尺度损失，权重: {self.config.training.multi_scale_weights}")
     
-    def _create_optimizer(self):
+    def _create_optimizer(self) -> torch.optim.Optimizer:
         """创建优化器"""
         if self.config.training.optimizer.lower() == "adam":
             return optim.Adam(
@@ -166,7 +166,7 @@ class Trainer:
         else:
             raise ValueError(f"未知优化器: {self.config.training.optimizer}")
     
-    def _create_scheduler(self):
+    def _create_scheduler(self) -> Optional[torch.optim.lr_scheduler._LRScheduler]:
         """创建学习率调度器"""
         scheduler_name = self.config.training.scheduler.lower()
         
@@ -694,7 +694,7 @@ class Trainer:
         except Exception as e:
             print(f"详细指标计算失败: {e}")
     
-    def train(self):
+    def train(self) -> None:
         """主训练循环"""
         print("开始训练...")
         start_time = time.time()

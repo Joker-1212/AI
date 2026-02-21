@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
 Low-dose CT Enhancement AI - Main Entry Point
+
+This script provides the main entry point for the CT enhancement AI pipeline.
+It handles proper module imports and path management.
 """
 
 import os
@@ -8,17 +11,26 @@ import sys
 import argparse
 from pathlib import Path
 
-# Add scripts directory to path for utilities
-sys.path.append(str(Path(__file__).parent))
+# Add project root to path for proper module imports
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from scripts.utils.logging import get_script_logger
-from scripts.utils.error_handler import handle_exceptions, ScriptError
-from scripts.utils.arg_parser import create_subcommand_parser
-
-from Module.Config.config import Config
-from Module.Loader.data_loader import create_dummy_data
-from Module.Model.train import Trainer
-from Module.Inference.inference import CTEnhancer
+# Now we can import modules properly
+try:
+    from Module.Config.config import Config
+    from Module.Loader.data_loader import create_dummy_data
+    from Module.Model.train import Trainer
+    from Module.Inference.inference import CTEnhancer
+    from scripts.utils.logging import get_script_logger
+    from scripts.utils.error_handler import handle_exceptions, ScriptError
+    from scripts.utils.arg_parser import create_subcommand_parser
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Please ensure you are running from the project root directory.")
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Project root: {project_root}")
+    sys.exit(1)
 
 # Setup logger
 logger = get_script_logger("main")

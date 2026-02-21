@@ -112,7 +112,7 @@ class CTEnhancer:
             enhanced_images.append(enhanced)
         return enhanced_images
     
-    def enhance_file(self, input_path: str, output_path: Optional[str] = None):
+    def enhance_file(self, input_path: str, output_path: Optional[str] = None) -> str:
         """
         增强文件中的图像
         
