@@ -8,50 +8,80 @@ python>=3.9
 
 # Core ML Libraries
 #######
-torch>=2.1.0
-torchvision>=0.16.0
+# PyTorch with compatible versions
+torch>=2.1.0,<2.10.0
+torchvision>=0.16.0,<0.25.0
 
 # Medical Image Processing
 ########
-monai>=1.3.0
-nibabel>=5.3.3
-pydicom>=3.0.1
+monai>=1.3.0,<2.0.0
+nibabel>=5.3.3,<6.0.0
+pydicom>=3.0.1,<4.0.0
 
 # Scientific Computing
 ######
-numpy>=1.24.0
-scipy>=1.11.0
-pandas>=2.0.0
+numpy>=1.24.0,<2.0.0
+scipy>=1.11.0,<2.0.0
+pandas>=2.0.0,<3.0.0
 
 # Image Processing
 ######
-scikit-image>=0.22.0
-Pillow>=10.0.0
-PyWavelets>=1.9.0
+scikit-image>=0.22.0,<0.25.0
+Pillow>=10.0.0,<11.0.0
+PyWavelets>=1.9.0,<2.0.0
 
 # Visualization
 #####
-matplotlib>=3.7.0
-seaborn>=0.12.0
+matplotlib>=3.7.0,<4.0.0
+seaborn>=0.12.0,<0.14.0
 
 # Development Tools
 ######
-tqdm>=4.65.0
-tensorboard>=2.13.0
-jupyter>=1.0.0
-ipykernel>=6.25.0
-ipywidgets>=8.0.0
+tqdm>=4.65.0,<5.0.0
+tensorboard>=2.13.0,<3.0.0
+jupyter>=1.0.0,<2.0.0
+ipykernel>=6.25.0,<7.0.0
+ipywidgets>=8.0.0,<9.0.0
 
 # Configuration & Utilities
 #######
-PyYAML>=6.0
-psutil>=5.9.0
+PyYAML>=6.0,<7.0
+psutil>=5.9.0,<6.0.0
 
-# Optional Dependencies
-######
-# Image quality assessment (requires GPU)
-lpips>=0.1.4
-# Computer vision (not used in project, but potentially useful)
-# opencv-python>=4.8.0
-# Machine learning utilities
-# scikit-learn>=1.3.0
+# ============================================
+# Optional Dependencies (for specific features)
+# ============================================
+
+# [image-quality] - Image quality assessment (requires GPU)
+lpips>=0.1.4,<0.2.0
+
+# [computer-vision] - Computer vision utilities
+# opencv-python>=4.8.0,<5.0.0
+
+# [machine-learning] - Machine learning utilities
+# scikit-learn>=1.3.0,<2.0.0
+
+# [dev] - Development dependencies
+# pytest>=7.4.0,<8.0.0
+# black>=23.0.0,<24.0.0
+# flake8>=6.0.0,<7.0.0
+# mypy>=1.5.0,<2.0.0
+
+# [docs] - Documentation dependencies
+# sphinx>=7.0.0,<8.0.0
+# sphinx-rtd-theme>=1.3.0,<2.0.0
+
+# ============================================
+# Environment-specific dependencies
+# ============================================
+
+# For Windows users (optional)
+# pywin32>=306,<307  # Windows-specific utilities
+
+# For CUDA 11.8 (example)
+# torch==2.1.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+# torchvision==0.16.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+
+# For CUDA 12.1 (example)
+# torch==2.1.0+cu121 --index-url https://download.pytorch.org/whl/cu121
+# torchvision==0.16.0+cu121 --index-url https://download.pytorch.org/whl/cu121
