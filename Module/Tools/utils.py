@@ -60,18 +60,31 @@ def load_checkpoint(filepath: str, model: nn.Module,
     return epoch, val_loss
 
 
-def calculate_metrics(pred: torch.Tensor, target: torch.Tensor) -> Tuple[float, float]:
+def calculate_metrics(pred: torch.Tensor, target: torch.Tensor,
+                     use_optimized: bool = True, **kwargs) -> Tuple[float, float]:
     """
     计算PSNR和SSIM指标
     
     参数:
         pred: 预测图像张量 (B, C, H, W, D)
         target: 目标图像张量 (B, C, H, W, D)
+        use_optimized: 是否使用优化版本（推荐）
+        **kwargs: 传递给优化函数的额外参数
     
     返回:
         psnr: 平均PSNR (dB)
         ssim: 平均SSIM
     """
+    if use_optimized:
+        try:
+            from .memory_optimizer import calculate_metrics_optimized
+            return calculate_metrics_optimized(pred, target, **kwargs)
+        except ImportError:
+            # 回退到原始实现
+            print("警告: 无法导入优化版本，使用原始实现")
+            pass
+    
+    # 原始实现（向后兼容）
     # 转换为numpy
     pred_np = pred.detach().cpu().numpy()
     target_np = target.detach().cpu().numpy()
@@ -101,7 +114,7 @@ def calculate_metrics(pred: torch.Tensor, target: torch.Tensor) -> Tuple[float, 
                 pred_slice = pred_img[:, :, z]
                 target_slice = target_img[:, :, z]
                 ssim_val = structural_similarity(
-                    target_slice, pred_slice, 
+                    target_slice, pred_slice,
                     data_range=data_range,
                     win_size=7  # 较小的窗口适用于256x256图像
                 )

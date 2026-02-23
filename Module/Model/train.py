@@ -22,6 +22,7 @@ from ..Tools.diagnostics import (
     DiagnosticsConfig, ImageMetricsCalculator, ValidationVisualizer,
     ModelDiagnostics, TrainingCurveAnalyzer
 )
+from ..Tools.amp_optimizer import AMPOptimizer, autocast_context, get_recommended_amp_config
 
 
 class Trainer:
@@ -702,12 +703,6 @@ class Trainer:
         for epoch in range(self.current_epoch, self.config.training.num_epochs):
             self.current_epoch = epoch
             
-            # 学习率热身
-            if self.warmup_scheduler and epoch < self.warmup_epochs:
-                self.warmup_scheduler.step()
-                current_lr = self.optimizer.param_groups[0]['lr']
-                print(f"热身阶段 Epoch {epoch+1}/{self.warmup_epochs}, 学习率: {current_lr:.6f}")
-            
             # 训练
             train_loss = self.train_epoch()
             self.train_losses.append(train_loss)
@@ -719,10 +714,16 @@ class Trainer:
             self.val_ssims.append(val_ssim)
             
             # 学习率调度
-            if self.scheduler:
+            if self.warmup_scheduler and epoch < self.warmup_epochs:
+                # 热身调度器：在optimizer.step()之后调用
+                self.warmup_scheduler.step()
+                current_lr = self.optimizer.param_groups[0]['lr']
+                print(f"热身阶段 Epoch {epoch+1}/{self.warmup_epochs}, 学习率: {current_lr:.6f}")
+            elif self.scheduler:
+                # 主调度器：热身结束后使用
                 if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
                     self.scheduler.step(val_loss)
-                elif epoch >= self.warmup_epochs:  # 热身结束后才使用主调度器
+                else:
                     self.scheduler.step()
             
             # 打印进度

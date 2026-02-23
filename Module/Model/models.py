@@ -1,6 +1,7 @@
 """
 低剂量CT增强模型
 """
+import logging
 import torch
 import torch.nn as nn
 import monai
@@ -10,6 +11,9 @@ from typing import Tuple, Optional, Union
 
 from ..Config.config import ModelConfig
 from ..Tools.wavelet_transform import WaveletDomainProcessing, LearnableDirectionalWavelet, DWT2d
+
+# 配置日志记录
+logger = logging.getLogger(__name__)
 
 
 class CTEnhancementModel(nn.Module):
@@ -331,19 +335,152 @@ class WaveletDomainCNNModel(CTEnhancementModel):
             nn.Conv2d(config.features[0] // 2, config.out_channels, kernel_size=3, padding=1),
         )
     
-    def forward(self, x):
-        # 输入形状: [B, C, H, W, D=1]
-        # 转换为2D: [B, C, H, W]
-        x_2d = x.squeeze(-1)
+    def forward(self, x, slice_handling='average'):
+        """
+        前向传播，支持灵活的维度处理
+        
+        参数:
+            x: 输入张量，支持以下形状:
+                - 4D: [batch_size, channels, height, width]
+                - 5D: [batch_size, channels, height, width, depth]
+            slice_handling: 当输入为5D且depth>1时的处理策略:
+                - 'average': 对深度维度取平均 (默认)
+                - 'first': 取第一个切片
+                - 'max': 取最大强度切片
+                - 'all': 处理所有切片并返回5D输出（实验性）
+        
+        返回:
+            输出张量，形状与输入匹配（除了'all'模式返回5D）
+        
+        异常:
+            ValueError: 当输入维度不支持或slice_handling参数无效时
+        """
+        import torch
+        
+        # 记录原始形状和维度
+        original_shape = x.shape
+        original_ndim = x.ndim
+        
+        # 添加调试信息 - 打印到控制台
+        # print(f"[DEBUG] WaveletDomainCNNModel.forward() 输入形状: {original_shape}, 维度: {original_ndim}D, 设备: {x.device}")
+        
+        # 日志记录输入信息
+        # logger.debug(f"WaveletDomainCNNModel.forward() 输入形状: {original_shape}, 维度: {original_ndim}D")
+        # logger.debug(f"切片处理策略: {slice_handling}")
+        
+        # 维度验证和处理
+        if original_ndim == 4:
+            # 4D输入：直接使用
+            x_2d = x
+            depth_dim_present = False
+            depth_size = 1
+            # logger.debug("检测到4D输入，直接处理")
+            # print(f"[DEBUG] 4D输入，直接使用，x_2d形状: {x_2d.shape}")
+            
+        elif original_ndim == 5:
+            # 5D输入：需要处理深度维度
+            batch_size, channels, height, width, depth = original_shape
+            # logger.debug(f"检测到5D输入，深度维度大小: {depth}")
+            # print(f"[DEBUG] 5D输入，深度={depth}")
+            
+            if depth == 1:
+                # 深度维度为1：直接压缩
+                x_2d = x.squeeze(-1)
+                depth_dim_present = True
+                depth_size = 1
+                # logger.debug("深度维度为1，已压缩")
+                # print(f"[DEBUG] 压缩后x_2d形状: {x_2d.shape}")
+                
+            else:
+                # 深度维度>1：根据策略处理
+                depth_dim_present = True
+                depth_size = depth
+                logger.info(f"处理多切片数据 (depth={depth})，使用策略: {slice_handling}")
+                
+                if slice_handling == 'average':
+                    # 对深度维度取平均
+                    x_2d = x.mean(dim=-1)
+                    # logger.debug("对深度维度取平均")
+                    
+                elif slice_handling == 'first':
+                    # 取第一个切片
+                    x_2d = x[:, :, :, :, 0]
+                    # logger.debug("取第一个切片")
+                    
+                elif slice_handling == 'max':
+                    # 取最大强度切片
+                    # 计算每个切片的平均强度，选择强度最大的切片
+                    slice_intensities = x.mean(dim=[1, 2, 3])  # [B, D]
+                    max_indices = slice_intensities.argmax(dim=-1)  # [B]
+                    # logger.debug(f"最大强度切片索引: {max_indices.tolist()}")
+                    
+                    # 为每个批次选择对应的切片
+                    x_2d_list = []
+                    for b in range(batch_size):
+                        x_2d_list.append(x[b, :, :, :, max_indices[b]].unsqueeze(0))
+                    x_2d = torch.cat(x_2d_list, dim=0)
+                    # logger.debug("选择最大强度切片")
+                    
+                elif slice_handling == 'all':
+                    # 处理所有切片：将深度维度合并到批次维度
+                    # 重塑为 [B*D, C, H, W]
+                    batch_size, channels, height, width, depth = original_shape
+                    logger.info(f"处理所有切片，将{batch_size}x{depth}切片合并到批次维度")
+                    
+                    x_reshaped = x.permute(0, 4, 1, 2, 3).contiguous()  # [B, D, C, H, W]
+                    x_reshaped = x_reshaped.view(batch_size * depth, channels, height, width)
+                    
+                    # 小波域处理
+                    wavelet_enhanced = self.wavelet_processor(x_reshaped)
+                    
+                    # 细化
+                    refined = self.refine(wavelet_enhanced)
+                    
+                    # 恢复原始形状 [B, D, C, H, W]
+                    refined = refined.view(batch_size, depth, self.config.out_channels, height, width)
+                    refined = refined.permute(0, 2, 3, 4, 1).contiguous()  # [B, C, H, W, D]
+                    
+                    # logger.debug(f"所有切片处理完成，输出形状: {refined.shape}")
+                    return refined
+                    
+                else:
+                    error_msg = f"无效的slice_handling参数: '{slice_handling}'. 可选值: 'average', 'first', 'max', 'all'"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                    
+        else:
+            # 不支持的维度
+            error_msg = (
+                f"不支持的输入维度: {original_ndim}D. "
+                f"WaveletDomainCNNModel仅支持4D或5D输入。"
+                f"当前输入形状: {original_shape}"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # 小波域处理
+        # logger.debug("进行小波域处理")
+        # print(f"[DEBUG] 调用小波处理器，输入形状: {x_2d.shape}")
         wavelet_enhanced = self.wavelet_processor(x_2d)
+        # print(f"[DEBUG] 小波处理器输出形状: {wavelet_enhanced.shape}")
         
         # 细化
+        # logger.debug("进行细化处理")
+        # print(f"[DEBUG] 调用细化层，输入形状: {wavelet_enhanced.shape}")
         refined = self.refine(wavelet_enhanced)
+        # # print(f"[DEBUG] 细化层输出形状: {refined.shape}")
         
-        # 恢复深度维度
-        return refined.unsqueeze(-1)
+        # 如果需要，恢复深度维度
+        if depth_dim_present and depth_size == 1:
+            refined = refined.unsqueeze(-1)
+            # logger.debug(f"恢复深度维度，输出形状: {refined.shape}")
+            # print(f"[DEBUG] 恢复深度维度后输出形状: {refined.shape}")
+        # else:
+            # logger.debug(f"输出形状: {refined.shape}")
+            # print(f"[DEBUG] 输出形状: {refined.shape}")
+        
+        # print(f"[DEBUG] 最终返回形状: {refined.shape}")
+        return refined
 
 
 class FBPConvNetModel(CTEnhancementModel):
@@ -424,3 +561,4 @@ if __name__ == "__main__":
     output = model(dummy_input)
     print(f"输入形状: {dummy_input.shape}")
     print(f"输出形状: {output.shape}")
+

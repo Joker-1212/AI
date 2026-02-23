@@ -67,77 +67,111 @@
 
 ```bash
 # 创建2D示例数据（20个样本）
-python run.py create-data --type 2d --num 20
+python scripts/main.py create-data --type 2d --num 20
 
 # 创建3D示例数据（5个样本）
-python run.py create-data --type 3d --num 5
+python scripts/main.py create-data --type 3d --num 5
 ```
 
 ### 2. 训练模型
 
 ```bash
 # 使用默认配置训练
-python run.py train
+python scripts/main.py train
 
 # 使用自定义配置训练
-python run.py train --config configs/advanced_training_config.yaml
+python scripts/main.py train --config configs/advanced_training_config.yaml
 ```
 
 ### 3. 增强图像
 
 ```bash
 # 增强单张图像
-python run.py enhance --checkpoint models/checkpoints/best_model.pth --input data/low_dose/image.nii
+python scripts/main.py enhance --checkpoint models/checkpoints/best_model.pth --input data/low_dose/image.nii
 
 # 增强目录中的所有图像
-python run.py enhance --checkpoint models/checkpoints/best_model.pth --input data/low_dose/ --output results/
+python scripts/main.py enhance --checkpoint models/checkpoints/best_model.pth --input data/low_dose/ --output results/
 ```
 
 ### 4. 运行诊断
 
 ```bash
-# 为训练好的模型生成诊断报告
-python -m Module.Tools.diagnostics --checkpoint models/checkpoints/best_model.pth --output diagnostics/report.html
+# 为训练好的模型生成全面诊断报告
+python -m Module.Tools.diagnostics comprehensive \
+  --model models/checkpoints/best_model.pth \
+  --data ./data \
+  --log ./training_logs/training_log.json \
+  --output diagnostics/comprehensive
 ```
 
 ## 项目结构
 
 ```
 .
-├── README.md                    # 本文档
-├── requirements.txt             # Python依赖
-├── configs/                     # 配置文件目录
-│   └── advanced_training_config.yaml  # 示例配置
-├── diagnostics/                 # 诊断报告和可视化
-├── Module/                      # 主要源代码
-│   ├── Config/                  # 配置管理
-│   │   └── config.py            # 配置类
-│   ├── Loader/                  # 数据加载和预处理
-│   │   └── data_loader.py       # 数据加载器和变换
-│   ├── Model/                   # 模型定义
-│   │   ├── models.py            # 神经网络架构
-│   │   ├── train.py             # 训练逻辑
-│   │   └── losses.py            # 损失函数
-│   ├── Inference/               # 推理模块
-│   │   └── inference.py         # CT增强器类
-│   └── Tools/                   # 工具函数
-│       ├── diagnostics.py       # 诊断工具
-│       ├── utils.py             # 通用工具函数
-│       └── wavelet_transform.py # 小波变换工具
-├── scripts/                     # 组织化的脚本目录
-│   ├── main.py                  # 主入口点脚本（支持子命令）
-│   ├── data/                    # 数据相关脚本
-│   │   └── create_sample_data.py # 示例数据生成
-│   ├── training/                # 训练脚本
-│   │   └── train_advanced.py    # 高级训练脚本
-│   ├── inference/               # 推理脚本（预留）
-│   ├── utils/                   # 脚本工具模块
-│   │   ├── logging.py           # 日志配置
-│   │   ├── config_loader.py     # 配置管理
-│   │   ├── error_handler.py     # 错误处理
-│   │   └── arg_parser.py        # 命令行参数解析
-│   └── README.md                # 脚本使用文档
-└── plans/                       # 项目规划文档
+├── .gitignore
+├── LICENSE
+├── README.md
+├── requirements-dev.txt
+├── requirements.txt
+├── run_tests.py
+├── tox.ini
+├── .github/
+├── .pytest_cache/
+├── configs/
+│   └── advanced_training_config.yaml
+├── diagnostics/
+│   ├── reports/
+│   │   └── optimization_validation_20260222_164547.json
+│   └── visualizations/
+├── Module/
+│   ├── __init__.py
+│   ├── Config/
+│   │   └── config.py
+│   ├── Inference/
+│   │   └── inference.py
+│   ├── Loader/
+│   │   ├── data_loader.py
+│   │   └── optimized_data_loader.py
+│   ├── Model/
+│   │   ├── losses.py
+│   │   ├── models.py
+│   │   └── train.py
+│   └── Tools/
+│       ├── amp_optimizer.py
+│       ├── device_manager.py
+│       ├── diagnostics.py
+│       ├── memory_optimizer.py
+│       ├── performance_monitor.py
+│       ├── utils.py
+│       ├── wavelet_transform.py
+│       └── diagnostics/
+│           ├── __init__.py
+│           ├── optimized_diagnostics.py
+│           ├── analysis/
+│           │   └── __init__.py
+│           ├── cli/
+│           │   └── __init__.py
+│           ├── config/
+│           │   └── __init__.py
+│           ├── metrics/
+│           ├── model/
+│           │   └── __init__.py
+│           ├── utils/
+│           │   └── optimization.py
+│           └── visualization/
+│               └── __init__.py
+├── scripts/
+│   ├── main.py
+│   ├── README.md
+│   ├── validate_optimizations.py
+│   ├── inference/
+│   ├── training/
+│   │   └── train_advanced.py
+│   └── utils/
+│       ├── arg_parser.py
+│       ├── config_loader.py
+│       ├── error_handler.py
+│       └── logging.py
 ```
 
 ## 配置
@@ -227,17 +261,17 @@ enhancer.enhance_file("input.nii", "output.nii")
 
 ```bash
 # 使用特定配置训练
-python run.py train --config my_config.yaml
+python scripts/main.py train --config my_config.yaml
 
 # 使用模式匹配增强多个文件
-python run.py enhance \
+python scripts/main.py enhance \
   --checkpoint models/checkpoints/best_model.pth \
   --input data/low_dose/ \
   --output results/ \
   --pattern "*.nii.gz"
 
 # 创建3D虚拟数据用于测试
-python run.py create-data --type 3d --num 10
+python scripts/main.py create-data --type 3d --num 10
 ```
 
 ## 诊断工具
@@ -269,37 +303,56 @@ python run.py create-data --type 3d --num 10
 ### 使用诊断工具
 
 ```python
-from Module.Tools.diagnostics import DiagnosticsRunner
+from Module.Tools.diagnostics import DiagnosticsCLI
+from Module.Tools.diagnostics import DiagnosticsConfig
 
-# 创建诊断运行器
-runner = DiagnosticsRunner(config)
+# 创建诊断配置和CLI
+config = DiagnosticsConfig(
+    compute_psnr=True,
+    compute_ssim=True,
+    visualize_samples=3,
+    check_gradients=True
+)
+cli = DiagnosticsCLI(config)
 
 # 运行全面诊断
-report = runner.run_comprehensive_diagnostics(
-    model=model,
-    train_loader=train_loader,
-    val_loader=val_loader,
-    epoch=current_epoch
+report = cli.run_comprehensive_diagnostics(
+    model_path="models/checkpoints/best_model.pth",
+    data_path="./data",
+    training_log_path="./training_logs/training_log.json",
+    output_dir="./diagnostics/comprehensive"
 )
 
 # 生成HTML报告
-runner.generate_html_report(report, "diagnostics/report.html")
+cli.generate_html_report(report, "diagnostics/report.html")
 ```
 
 ### 命令行诊断
 
 ```bash
-# 生成诊断报告
-python -m Module.Tools.diagnostics \
-  --checkpoint models/checkpoints/best_model.pth \
-  --data-dir ./data \
-  --output diagnostics/full_report.html
+# 运行全面诊断
+python -m Module.Tools.diagnostics comprehensive \
+  --model models/checkpoints/best_model.pth \
+  --data ./data \
+  --log ./training_logs/training_log.json \
+  --output diagnostics/comprehensive
 
-# 仅运行特定诊断
-python -m Module.Tools.diagnostics \
-  --checkpoint models/checkpoints/best_model.pth \
-  --metrics psnr ssim rmse \
-  --visualize-samples 10
+# 运行指标分析
+python -m Module.Tools.diagnostics metrics \
+  --pred ./data/predictions \
+  --target ./data/targets \
+  --output diagnostics/metrics
+
+# 运行模型诊断
+python -m Module.Tools.diagnostics model \
+  --model models/checkpoints/best_model.pth \
+  --data ./data/samples \
+  --output diagnostics/model
+
+# 运行训练分析
+python -m Module.Tools.diagnostics training \
+  --log ./training_logs/training_log.json \
+  --output diagnostics/training
 ```
 
 ## 支持的模型

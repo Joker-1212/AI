@@ -6,6 +6,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Optional, List
+import warnings
+import contextlib
+
+# 抑制torchvision相关的弃用警告
+warnings.filterwarnings('ignore', category=DeprecationWarning, module='torchvision')
+warnings.filterwarnings('ignore', category=FutureWarning, module='torchvision')
 
 
 class SSIMLoss(nn.Module):
@@ -34,12 +40,18 @@ class SSIMLoss(nn.Module):
         计算SSIM损失
         
         参数:
-            pred: 预测图像 (B, C, H, W)
-            target: 目标图像 (B, C, H, W)
+            pred: 预测图像 (B, C, H, W) 或 (B, C, H, W, D)
+            target: 目标图像 (B, C, H, W) 或 (B, C, H, W, D)
         
         返回:
             loss: SSIM损失值
         """
+        # 处理5D输入（深度维度为1的情况）
+        if pred.ndim == 5:
+            # 压缩深度维度
+            pred = pred.squeeze(-1)
+            target = target.squeeze(-1)
+        
         batch_size, channels = pred.shape[0], pred.shape[1]
         
         if pred.shape[1] > 1:
@@ -85,18 +97,37 @@ class SSIMLoss(nn.Module):
 
 
 class PerceptualLoss(nn.Module):
-    """感知损失 - 使用预训练的VGG网络（简化版）"""
+    """
+    感知损失 - 使用预训练的VGG网络（简化版）
+    
+    使用预训练的VGG19网络提取特征，计算特征空间中的L1损失。
+    支持torchvision 0.13+的新API（weights参数）和旧版API（pretrained参数）的向后兼容性。
+    
+    注意:
+        - torchvision >= 0.13: 使用新的weights参数API
+        - torchvision < 0.13: 使用已弃用的pretrained参数（向后兼容）
+        - 如果无法加载预训练权重，将使用未初始化的模型并发出警告
+    """
     
     def __init__(self, layer_indices: Tuple[int, ...] = (1, 6, 11, 20)):
         """
+        初始化感知损失函数
+        
         参数:
             layer_indices: VGG19特征层索引（使用ReLU层）
                 relu1_2: 1, relu2_2: 6, relu3_2: 11, relu4_2: 20
+                
+        版本兼容性:
+            自动检测torchvision版本并使用相应的API加载预训练权重：
+            - torchvision 0.13+: 使用models.vgg19(weights=models.VGG19_Weights.DEFAULT)
+            - torchvision < 0.13: 使用models.vgg19(pretrained=True)（已弃用但向后兼容）
         """
         super().__init__()
-        # 加载预训练的VGG19
+        # 加载预训练的VGG19（兼容torchvision新旧版本）
         from torchvision import models
-        vgg = models.vgg19(pretrained=True).features
+        
+        # 版本检测和兼容性处理
+        vgg = self._load_vgg19_with_compatibility()
         
         # 提取指定层的特征提取器
         self.layers = nn.ModuleList()
@@ -107,17 +138,84 @@ class PerceptualLoss(nn.Module):
         for param in self.parameters():
             param.requires_grad = False
     
+    def _load_vgg19_with_compatibility(self):
+        """
+        加载VGG19模型，兼容torchvision新旧版本API
+        
+        Returns:
+            VGG19模型的特征提取器
+        """
+        # 在导入torchvision之前设置警告过滤器
+        import warnings
+        with warnings.catch_warnings():
+            # 抑制所有UserWarning、DeprecationWarning和FutureWarning
+            warnings.filterwarnings('ignore', category=UserWarning)
+            warnings.filterwarnings('ignore', category=DeprecationWarning)
+            warnings.filterwarnings('ignore', category=FutureWarning)
+            
+            from torchvision import models
+            
+            try:
+                # 尝试torchvision 0.13+的新API
+                # 首先检查是否有VGG19_Weights枚举
+                if hasattr(models, 'VGG19_Weights'):
+                    # 使用新的weights参数，优先使用DEFAULT权重
+                    try:
+                        # 尝试使用DEFAULT权重（torchvision 0.13+推荐）
+                        weights = models.VGG19_Weights.DEFAULT
+                    except AttributeError:
+                        # 回退到IMAGENET1K_V1
+                        weights = models.VGG19_Weights.IMAGENET1K_V1
+                    
+                    vgg = models.vgg19(weights=weights).features
+                else:
+                    # 回退到旧版pretrained参数
+                    vgg = models.vgg19(pretrained=True).features
+                    warnings.warn(
+                        "使用已弃用的pretrained参数加载VGG19权重。请升级到torchvision 0.13+。",
+                        DeprecationWarning,
+                        stacklevel=2
+                    )
+            except (AttributeError, TypeError) as e:
+                # 如果上述方法都失败，尝试直接使用pretrained参数
+                try:
+                    vgg = models.vgg19(pretrained=True).features
+                    warnings.warn(
+                        f"回退到旧版API加载VGG19权重: {e}",
+                        DeprecationWarning,
+                        stacklevel=2
+                    )
+                except Exception as e2:
+                    # 如果仍然失败，创建未初始化的模型
+                    warnings.warn(
+                        f"无法加载预训练权重，使用未初始化的VGG19: {e2}",
+                        RuntimeWarning,
+                        stacklevel=2
+                    )
+                    vgg = models.vgg19().features
+        
+        return vgg
+    
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
         计算感知损失
         
         参数:
-            pred: 预测图像 (B, C, H, W)，假设C=3或1
-            target: 目标图像 (B, C, H, W)
+            pred: 预测图像 (B, C, H, W) 或 (B, C, H, W, D)，假设C=3或1
+            target: 目标图像 (B, C, H, W) 或 (B, C, H, W, D)
         
         返回:
             loss: 感知损失值
         """
+        # 处理5D输入（深度维度为1的情况）
+        if pred.ndim == 5:
+            # 压缩深度维度
+            pred = pred.squeeze(-1)
+            target = target.squeeze(-1)
+        
+        # 确保模型在正确的设备上
+        self.to(pred.device)
+        
         # 如果输入是单通道，复制到3通道
         if pred.shape[1] == 1:
             pred = pred.repeat(1, 3, 1, 1)
@@ -151,12 +249,18 @@ class MixedLoss(nn.Module):
         self.perceptual_loss = PerceptualLoss()
     
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        # 处理5D输入（深度维度为1的情况）
+        if pred.ndim == 5:
+            # 压缩深度维度
+            pred = pred.squeeze(-1)
+            target = target.squeeze(-1)
+        
         l1 = self.l1_loss(pred, target)
         ssim = self.ssim_loss(pred, target)
         perceptual = self.perceptual_loss(pred, target)
         
-        return (self.weights[0] * l1 + 
-                self.weights[1] * ssim + 
+        return (self.weights[0] * l1 +
+                self.weights[1] * ssim +
                 self.weights[2] * perceptual)
 
 
@@ -184,12 +288,18 @@ class MultiScaleLoss(nn.Module):
         计算多尺度损失
         
         参数:
-            pred: 预测图像 (B, C, H, W)
-            target: 目标图像 (B, C, H, W)
+            pred: 预测图像 (B, C, H, W) 或 (B, C, H, W, D)
+            target: 目标图像 (B, C, H, W) 或 (B, C, H, W, D)
         
         返回:
             loss: 多尺度损失值
         """
+        # 处理5D输入（深度维度为1的情况）
+        if pred.ndim == 5:
+            # 压缩深度维度
+            pred = pred.squeeze(-1)
+            target = target.squeeze(-1)
+        
         total_loss = 0.0
         
         for scale, weight in zip(self.scales, self.weights):

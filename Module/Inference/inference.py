@@ -15,18 +15,30 @@ from ..Config.config import Config, DataConfig, ModelConfig
 from ..Model.models import create_model
 from ..Loader.data_loader import get_transforms
 from ..Tools.utils import load_checkpoint, visualize_results, ensure_dir
+from ..Tools.device_manager import DeviceManager, optimize_model_for_device
 
 
 class CTEnhancer:
     """CT增强器"""
     
-    def __init__(self, checkpoint_path: str, config: Optional[Config] = None):
+    def __init__(self, checkpoint_path: str, config: Optional[Config] = None,
+                 device_preference: str = "auto", memory_limit_mb: Optional[float] = None):
         """
         参数:
             checkpoint_path: 训练好的模型检查点路径
             config: 配置对象（如果为None，则从检查点加载）
+            device_preference: 设备偏好 ('auto', 'cuda', 'cpu', 'mps')
+            memory_limit_mb: GPU内存限制（MB）
         """
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # 初始化设备管理器
+        self.device_manager = DeviceManager(
+            preferred_device=device_preference,
+            memory_limit_mb=memory_limit_mb
+        )
+        self.device = self.device_manager.get_device()
+        
+        # 打印设备信息
+        self.device_manager.print_device_info()
         
         if config is None:
             # 尝试从检查点目录加载配置
@@ -40,7 +52,14 @@ class CTEnhancer:
                 config = Config()
         
         self.config = config
-        self.model = create_model(config.model).to(self.device)
+        
+        # 创建模型并优化设备
+        self.model = create_model(config.model)
+        self.model = optimize_model_for_device(
+            self.model,
+            self.device,
+            input_shape=(1, 1, 256, 256, 32)  # 典型的CT图像形状
+        )
         
         # 加载检查点
         if os.path.exists(checkpoint_path):
@@ -53,6 +72,9 @@ class CTEnhancer:
         
         # 数据变换
         self.transform = get_transforms(config.data, is_train=False)
+        
+        # 内存优化
+        self.device_manager.optimize_memory(self.model, input_shape=(1, 1, 256, 256, 32))
     
     def preprocess(self, image: np.ndarray) -> torch.Tensor:
         """预处理图像"""

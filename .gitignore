@@ -7,3 +7,5 @@ Logs
 configs/*.pdf
 test*
 debug*
+**/*.backup
+**/*.log
