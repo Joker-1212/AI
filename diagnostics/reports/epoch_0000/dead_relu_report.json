@@ -1,0 +1,37 @@
+{
+  "per_layer_stats": {
+    "wavelet_processor.wavelet_conv.2": {
+      "dead_neurons": 1440379,
+      "total_neurons": 4194304,
+      "dead_ratio": 0.3434131145477295,
+      "mean_activation": 0.0684712827205658,
+      "std_activation": 0.6409792304039001
+    },
+    "wavelet_processor.wavelet_conv.5": {
+      "dead_neurons": 842148,
+      "total_neurons": 2097152,
+      "dead_ratio": 0.4015674591064453,
+      "mean_activation": 0.10651762783527374,
+      "std_activation": 0.8544352054595947
+    },
+    "refine.2": {
+      "dead_neurons": 2715256,
+      "total_neurons": 8388608,
+      "dead_ratio": 0.3236837387084961,
+      "mean_activation": 0.08623497188091278,
+      "std_activation": 0.6930237412452698
+    },
+    "refine.5": {
+      "dead_neurons": 1438504,
+      "total_neurons": 4194304,
+      "dead_ratio": 0.34296607971191406,
+      "mean_activation": 0.12102314829826355,
+      "std_activation": 0.7630981802940369
+    }
+  },
+  "total_dead_neurons": 6436287,
+  "total_neurons": 18874368,
+  "global_dead_ratio": 0.3410067558288574,
+  "has_dead_relu": true,
+  "overall_dead_ratio": 0.3410067558288574
+}

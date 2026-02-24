@@ -5,7 +5,7 @@
 """
 
 import warnings
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -75,29 +75,29 @@ class ValidationVisualizer:
         
         # 创建图形
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-        fig.suptitle(f'样本 {sample_idx} - 诊断可视化', fontsize=16)
+        fig.suptitle(f'Sample {sample_idx} - diagnostic visuallization', fontsize=16)
         
         # 绘制低剂量输入
         im1 = axes[0, 0].imshow(low_np, cmap='gray')
-        axes[0, 0].set_title('低剂量输入')
+        axes[0, 0].set_title('Low-Dose Input')
         axes[0, 0].axis('off')
         plt.colorbar(im1, ax=axes[0, 0])
         
         # 绘制增强输出
         im2 = axes[0, 1].imshow(enh_np, cmap='gray')
-        axes[0, 1].set_title('增强输出')
+        axes[0, 1].set_title('Enhanced Output')
         axes[0, 1].axis('off')
         plt.colorbar(im2, ax=axes[0, 1])
         
         # 绘制全剂量目标
         im3 = axes[1, 0].imshow(full_np, cmap='gray')
-        axes[1, 0].set_title('全剂量目标')
+        axes[1, 0].set_title('Full-Dose Target')
         axes[1, 0].axis('off')
         plt.colorbar(im3, ax=axes[1, 0])
         
         # 绘制差异图
         im4 = axes[1, 1].imshow(diff_np, cmap='coolwarm', vmin=-np.abs(diff_np).max(), vmax=np.abs(diff_np).max())
-        axes[1, 1].set_title('差异图 (增强 - 目标)')
+        axes[1, 1].set_title('Difference (Enhanced - Full-Dose)')
         axes[1, 1].axis('off')
         plt.colorbar(im4, ax=axes[1, 1])
         
@@ -151,48 +151,62 @@ class ValidationVisualizer:
         low_dose_batch: torch.Tensor,
         enhanced_batch: torch.Tensor,
         full_dose_batch: torch.Tensor,
-        num_samples: Optional[int] = None,
+        max_samples: Optional[int] = None,
         save_dir: Optional[str] = None,
-        show: bool = False
-    ) -> Dict[int, Figure]:
+        prefix: str = "sample"
+    ) -> List[Figure]:
         """
         可视化批量样本
         
         参数:
-            low_dose_batch: 低剂量输入图像批次 (B, C, H, W)
+            low_dose_batch: 低剂量输入图像批次 (B, C, H, W) 或 (B, C, H, W, D)
             enhanced_batch: 增强输出图像批次，形状相同
             full_dose_batch: 全剂量目标图像批次，形状相同
-            num_samples: 要可视化的样本数量，如果为None则使用配置中的visualize_samples
-            save_dir: 保存目录，如果为None则不保存
-            show: 是否显示图像
+            max_samples: 最大可视化样本数，如果为None则使用配置中的visualize_samples
+            save_dir: 保存目录，如果为None则使用配置中的visualization_dir
+            prefix: 文件名前缀
             
         返回:
-            图形字典，键为样本索引，值为图形对象
+            图形对象列表
         """
         batch_size = low_dose_batch.shape[0]
-        num_samples = num_samples or min(self.config.visualize_samples, batch_size)
+        max_samples = max_samples or self.config.visualize_samples
+        num_samples = min(batch_size, max_samples)
         
-        figures = {}
+        if save_dir is None:
+            save_dir = self.config.visualization_dir
+        
+        import os
+        os.makedirs(save_dir, exist_ok=True)
+        
+        figures = []
         
         for i in range(num_samples):
-            save_path = None
-            if save_dir:
-                import os
-                os.makedirs(save_dir, exist_ok=True)
-                save_path = os.path.join(save_dir, f'sample_{i}.png')
+            # 提取单个样本
+            low_dose = low_dose_batch[i]
+            enhanced = enhanced_batch[i]
+            full_dose = full_dose_batch[i]
             
+            # 生成保存路径
+            if self.config.save_visualizations:
+                save_path = os.path.join(save_dir, f"{prefix}_{i:03d}.png")
+            else:
+                save_path = None
+            
+            # 可视化单个样本
             fig = self.visualize_sample(
-                low_dose_batch[i],
-                enhanced_batch[i],
-                full_dose_batch[i],
+                low_dose, enhanced, full_dose,
                 sample_idx=i,
                 save_path=save_path,
-                show=show
+                show=False
             )
             
             if fig is not None:
-                figures[i] = fig
+                figures.append(fig)
+                import matplotlib.pyplot as plt
+                plt.close(fig)  # 关闭图形以释放内存
         
+        print(f"已可视化 {len(figures)} 个样本")
         return figures
 
 

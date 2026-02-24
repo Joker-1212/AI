@@ -633,18 +633,23 @@ class Trainer:
             if figures and len(figures) > 0:
                 try:
                     import matplotlib.pyplot as plt
-                    from torch.utils.tensorboard.summary import figure_to_image
                     
                     fig = figures[0]
-                    img = figure_to_image(fig)
-                    self.writer.add_image(
+                    # 使用add_figure方法直接记录matplotlib图形
+                    self.writer.add_figure(
                         "validation/visualization",
-                        img,
-                        self.current_epoch
+                        fig,
+                        self.current_epoch,
+                        close=True  # 自动关闭图形以释放内存
                     )
-                    plt.close(fig)
-                except ImportError:
-                    print("警告: 无法将可视化图像记录到TensorBoard")
+                except (ImportError, AttributeError) as e:
+                    print(f"警告: 无法将可视化图像记录到TensorBoard: {e}")
+                    # 如果add_figure不可用，尝试回退到手动关闭图形
+                    try:
+                        import matplotlib.pyplot as plt
+                        plt.close(fig)
+                    except:
+                        pass
             
             print(f"验证集可视化已保存到: {vis_dir}")
             

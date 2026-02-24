@@ -1,0 +1,288 @@
+{
+  "global_stats": {
+    "mean": 0.009488599374890327,
+    "std": 0.1123136430978775,
+    "min": -0.32966259121894836,
+    "max": 1.000040054321289,
+    "abs_mean": 0.05059215798974037,
+    "median": 0.0010056146420538425,
+    "q25": -0.034376323223114014,
+    "q75": 0.03613480180501938,
+    "skewness": 6.428112030029297,
+    "kurtosis": 54.75320816040039,
+    "weight_range": 1.329702615737915,
+    "total_params": 7624
+  },
+  "per_layer_stats": {
+    "wavelet_processor.wavelet.directional_filters.weight": {
+      "mean": 1.0353550351283047e-05,
+      "std": 0.05472307279706001,
+      "min": -0.13916556537151337,
+      "max": 0.13923333585262299,
+      "abs_mean": 0.040000904351472855,
+      "median": 3.9291066059377044e-05,
+      "shape": [
+        8,
+        1,
+        5,
+        5
+      ],
+      "num_params": 200,
+      "anomaly_count": 0,
+      "anomaly_ratio": 0.0,
+      "large_weight_count": 0,
+      "small_weight_count": 0,
+      "max_z_score": 2.5441367626190186,
+      "anomaly_threshold": 3.0
+    },
+    "wavelet_processor.wavelet_conv.0.weight": {
+      "mean": -0.0030245657544583082,
+      "std": 0.06903626024723053,
+      "min": -0.1177968829870224,
+      "max": 0.11777831614017487,
+      "abs_mean": 0.05975930020213127,
+      "median": -0.0028898504097014666,
+      "shape": [
+        16,
+        8,
+        3,
+        3
+      ],
+      "num_params": 1152,
+      "anomaly_count": 0,
+      "anomaly_ratio": 0.0,
+      "large_weight_count": 0,
+      "small_weight_count": 0,
+      "max_z_score": 1.7498468160629272,
+      "anomaly_threshold": 3.0
+    },
+    "wavelet_processor.wavelet_conv.1.weight": {
+      "mean": 0.9999985694885254,
+      "std": 3.8095127820270136e-05,
+      "min": 0.9999599456787109,
+      "max": 1.000040054321289,
+      "abs_mean": 0.9999985694885254,
+      "median": 0.9999871253967285,
+      "shape": [
+        16
+      ],
+      "num_params": 16,
+      "anomaly_count": 0,
+      "anomaly_ratio": 0.0,
+      "large_weight_count": 0,
+      "small_weight_count": 0,
+      "max_z_score": 1.088979959487915,
+      "anomaly_threshold": 3.0
+    },
+    "wavelet_processor.wavelet_conv.3.weight": {
+      "mean": 0.0016586559358984232,
+      "std": 0.04815182462334633,
+      "min": -0.08335966616868973,
+      "max": 0.08319815248250961,
+      "abs_mean": 0.04157864302396774,
+      "median": 0.003351808525621891,
+      "shape": [
+        8,
+        16,
+        3,
+        3
+      ],
+      "num_params": 1152,
+      "anomaly_count": 0,
+      "anomaly_ratio": 0.0,
+      "large_weight_count": 0,
+      "small_weight_count": 0,
+      "max_z_score": 1.7656303644180298,
+      "anomaly_threshold": 3.0
+    },
+    "wavelet_processor.wavelet_conv.4.weight": {
+      "mean": 1.0,
+      "std": 3.997244130005129e-05,
+      "min": 0.9999599456787109,
+      "max": 1.000040054321289,
+      "abs_mean": 1.0,
+      "median": 1.0,
+      "shape": [
+        8
+      ],
+      "num_params": 8
+    },
+    "wavelet_processor.inverse_conv.weight": {
+      "mean": 0.019904429093003273,
+      "std": 0.1964402198791504,
+      "min": -0.2352035641670227,
+      "max": 0.2707292139530182,
+      "abs_mean": 0.17740586400032043,
+      "median": 0.036784037947654724,
+      "shape": [
+        1,
+        8,
+        1,
+        1
+      ],
+      "num_params": 8
+    },
+    "refine.0.weight": {
+      "mean": 0.004428647458553314,
+      "std": 0.1881512701511383,
+      "min": -0.32966259121894836,
+      "max": 0.3322981894016266,
+      "abs_mean": 0.16270829737186432,
+      "median": 0.0035197227261960506,
+      "shape": [
+        32,
+        1,
+        3,
+        3
+      ],
+      "num_params": 288,
+      "anomaly_count": 0,
+      "anomaly_ratio": 0.0,
+      "large_weight_count": 0,
+      "small_weight_count": 0,
+      "max_z_score": 1.7756524085998535,
+      "anomaly_threshold": 3.0
+    },
+    "refine.1.weight": {
+      "mean": 1.0000028610229492,
+      "std": 3.8891041185706854e-05,
+      "min": 0.9999599456787109,
+      "max": 1.000040054321289,
+      "abs_mean": 1.0000028610229492,
+      "median": 1.0000351667404175,
+      "shape": [
+        32
+      ],
+      "num_params": 32,
+      "anomaly_count": 0,
+      "anomaly_ratio": 0.0,
+      "large_weight_count": 0,
+      "small_weight_count": 0,
+      "max_z_score": 1.1034764051437378,
+      "anomaly_threshold": 3.0
+    },
+    "refine.3.weight": {
+      "mean": 0.00013161062088329345,
+      "std": 0.033778462558984756,
+      "min": -0.0589408278465271,
+      "max": 0.058963533490896225,
+      "abs_mean": 0.029272735118865967,
+      "median": 0.00036127574276179075,
+      "shape": [
+        16,
+        32,
+        3,
+        3
+      ],
+      "num_params": 4608,
+      "anomaly_count": 0,
+      "anomaly_ratio": 0.0,
+      "large_weight_count": 0,
+      "small_weight_count": 0,
+      "max_z_score": 1.7488195896148682,
+      "anomaly_threshold": 3.0
+    },
+    "refine.4.weight": {
+      "mean": 0.9999966621398926,
+      "std": 3.861021468765102e-05,
+      "min": 0.9999600052833557,
+      "max": 1.000040054321289,
+      "abs_mean": 0.9999966621398926,
+      "median": 0.9999740123748779,
+      "shape": [
+        16
+      ],
+      "num_params": 16,
+      "anomaly_count": 0,
+      "anomaly_ratio": 0.0,
+      "large_weight_count": 0,
+      "small_weight_count": 0,
+      "max_z_score": 1.1238523721694946,
+      "anomaly_threshold": 3.0
+    },
+    "refine.6.weight": {
+      "mean": -0.0008933271747082472,
+      "std": 0.04664327949285507,
+      "min": -0.082099549472332,
+      "max": 0.08185215294361115,
+      "abs_mean": 0.04031294211745262,
+      "median": -0.000510215584654361,
+      "shape": [
+        1,
+        16,
+        3,
+        3
+      ],
+      "num_params": 144,
+      "anomaly_count": 0,
+      "anomaly_ratio": 0.0,
+      "large_weight_count": 0,
+      "small_weight_count": 0,
+      "max_z_score": 1.7740063667297363,
+      "anomaly_threshold": 3.0
+    }
+  },
+  "weight_changes": {},
+  "change_trend": {},
+  "weight_issues": [
+    "\u6743\u91cd\u5206\u5e03\u4e25\u91cd\u504f\u659c (\u504f\u5ea6: 6.43)",
+    "\u6743\u91cd\u5206\u5e03\u5c16\u5cf0 (\u5cf0\u5ea6: 54.75)"
+  ],
+  "current_weights": {
+    "wavelet_processor.wavelet.directional_filters.weight": [
+      8,
+      1,
+      5,
+      5
+    ],
+    "wavelet_processor.wavelet_conv.0.weight": [
+      16,
+      8,
+      3,
+      3
+    ],
+    "wavelet_processor.wavelet_conv.1.weight": [
+      16
+    ],
+    "wavelet_processor.wavelet_conv.3.weight": [
+      8,
+      16,
+      3,
+      3
+    ],
+    "wavelet_processor.wavelet_conv.4.weight": [
+      8
+    ],
+    "wavelet_processor.inverse_conv.weight": [
+      1,
+      8,
+      1,
+      1
+    ],
+    "refine.0.weight": [
+      32,
+      1,
+      3,
+      3
+    ],
+    "refine.1.weight": [
+      32
+    ],
+    "refine.3.weight": [
+      16,
+      32,
+      3,
+      3
+    ],
+    "refine.4.weight": [
+      16
+    ],
+    "refine.6.weight": [
+      1,
+      16,
+      3,
+      3
+    ]
+  },
+  "num_layers": 11
+}

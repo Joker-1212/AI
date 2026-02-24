@@ -80,6 +80,24 @@ class ImageMetricsCalculator:
         """
         return self.calculate_all_metrics(pred, target, data_range)
     
+    def _get_spatial_dims(self, tensor: torch.Tensor) -> List[int]:
+        """
+        获取空间维度索引
+        
+        参数:
+            tensor: 输入张量
+            
+        返回:
+            空间维度索引列表
+        """
+        ndim = tensor.dim()
+        if ndim == 4:  # (B, C, H, W)
+            return [2, 3]
+        elif ndim == 5:  # (B, C, H, W, D)
+            return [2, 3, 4]
+        else:
+            raise ValueError(f"不支持的张量维度: {ndim}，期望4D或5D张量")
+    
     def calculate_all_metrics_batch(
         self,
         pred: torch.Tensor,
@@ -89,6 +107,8 @@ class ImageMetricsCalculator:
     ) -> Dict[str, float]:
         """
         批量计算所有启用的指标（向量化版本，性能更优）
+        
+        支持4D张量 (B, C, H, W) 和5D张量 (B, C, H, W, D)
         """
         # 确保张量在相同设备上
         device = pred.device
@@ -96,6 +116,14 @@ class ImageMetricsCalculator:
             pred = pred.cuda()
             target = target.cuda()
             device = pred.device
+        
+        # 检查张量维度
+        if pred.dim() != target.dim():
+            raise ValueError(f"预测和目标张量维度不匹配: pred={pred.dim()}D, target={target.dim()}D")
+        
+        ndim = pred.dim()
+        if ndim not in [4, 5]:
+            raise ValueError(f"不支持的张量维度: {ndim}，期望4D或5D张量")
         
         # 自动确定数据范围
         if data_range is None:
@@ -108,15 +136,29 @@ class ImageMetricsCalculator:
         if self.config.compute_rmse or self.config.compute_mae:
             diff = pred - target
             
+            # 根据维度确定要减少的维度
+            if ndim == 4:
+                reduce_dims = [1, 2, 3]  # 减少C, H, W维度
+            else:  # ndim == 5
+                reduce_dims = [1, 2, 3, 4]  # 减少C, H, W, D维度
+            
             if self.config.compute_rmse:
-                rmse_per_sample = torch.sqrt(torch.mean(diff ** 2, dim=[1, 2, 3]))
+                rmse_per_sample = torch.sqrt(torch.mean(diff ** 2, dim=reduce_dims))
                 metrics['rmse'] = float(rmse_per_sample.mean().item())
-                metrics['rmse_std'] = float(rmse_per_sample.std().item())
+                # 使用unbiased=False避免样本数为1时产生nan
+                if rmse_per_sample.numel() > 1:
+                    metrics['rmse_std'] = float(rmse_per_sample.std().item())
+                else:
+                    metrics['rmse_std'] = 0.0
             
             if self.config.compute_mae:
-                mae_per_sample = torch.mean(torch.abs(diff), dim=[1, 2, 3])
+                mae_per_sample = torch.mean(torch.abs(diff), dim=reduce_dims)
                 metrics['mae'] = float(mae_per_sample.mean().item())
-                metrics['mae_std'] = float(mae_per_sample.std().item())
+                # 使用unbiased=False避免样本数为1时产生nan
+                if mae_per_sample.numel() > 1:
+                    metrics['mae_std'] = float(mae_per_sample.std().item())
+                else:
+                    metrics['mae_std'] = 0.0
         
         # 计算PSNR
         if self.config.compute_psnr:
@@ -132,7 +174,8 @@ class ImageMetricsCalculator:
                 psnr_list.append(psnr.item())
             
             metrics['psnr'] = float(np.mean(psnr_list))
-            metrics['psnr_std'] = float(np.std(psnr_list))
+            # 使用ddof=0避免样本数为1时产生nan
+            metrics['psnr_std'] = float(np.std(psnr_list, ddof=0))
         
         # 计算SSIM
         if self.config.compute_ssim:
@@ -144,11 +187,16 @@ class ImageMetricsCalculator:
                 pred_norm = (pred_img - pred_img.min()) / (pred_img.max() - pred_img.min() + 1e-8)
                 target_norm = (target_img - target_img.min()) / (target_img.max() - target_img.min() + 1e-8)
                 
-                ssim_val = self._calculate_ssim_torch(pred_norm, target_norm, data_range=1.0)
+                if ndim == 4:
+                    ssim_val = self._calculate_ssim_torch(pred_norm, target_norm, data_range=1.0)
+                else:  # ndim == 5
+                    ssim_val = self._calculate_ssim_3d_torch(pred_norm, target_norm, data_range=1.0)
+                
                 ssim_list.append(ssim_val.item())
             
             metrics['ssim'] = float(np.mean(ssim_list))
-            metrics['ssim_std'] = float(np.std(ssim_list))
+            # 使用ddof=0避免样本数为1时产生nan
+            metrics['ssim_std'] = float(np.std(ssim_list, ddof=0))
         
         # 计算LPIPS
         if self.config.compute_lpips and LPIPS_AVAILABLE:
@@ -160,7 +208,34 @@ class ImageMetricsCalculator:
                 pred_norm = (pred_img - pred_img.min()) / (pred_img.max() - pred_img.min() + 1e-8)
                 target_norm = (target_img - target_img.min()) / (target_img.max() - target_img.min() + 1e-8)
                 
-                lpips_val = self._calculate_lpips(pred_norm, target_norm)
+                # LPIPS仅支持2D图像，对于3D图像我们计算每个切片的平均值
+                if ndim == 5:
+                    # 获取5D张量的形状 [B, C, H, W, D]
+                    b, c, h, w, d = pred_norm.shape
+                    
+                    # 方法1：如果深度维度很小，计算每个深度切片的LPIPS
+                    # 方法2：如果深度维度是空间维度之一，可能需要选择最大切片
+                    # 这里我们采用简单的方法：如果深度<=4，计算所有切片平均值；否则使用中间切片
+                    
+                    if d <= 4:
+                        # 深度较小，计算所有切片
+                        slice_lpips = []
+                        for depth_idx in range(d):
+                            # 提取深度切片 [B, C, H, W, 1] -> [B, C, H, W]
+                            pred_slice = pred_norm[:, :, :, :, depth_idx]
+                            target_slice = target_norm[:, :, :, :, depth_idx]
+                            slice_lpips.append(self._calculate_lpips(pred_slice, target_slice))
+                        
+                        lpips_val = np.mean(slice_lpips) if slice_lpips else 0.0
+                    else:
+                        # 深度较大，使用中间切片以避免计算开销
+                        mid_depth = d // 2
+                        pred_slice = pred_norm[:, :, :, :, mid_depth]
+                        target_slice = target_norm[:, :, :, :, mid_depth]
+                        lpips_val = self._calculate_lpips(pred_slice, target_slice)
+                else:
+                    lpips_val = self._calculate_lpips(pred_norm, target_norm)
+                
                 lpips_list.append(lpips_val)
             
             metrics['lpips'] = float(np.mean(lpips_list))
@@ -169,6 +244,7 @@ class ImageMetricsCalculator:
         metrics['num_samples'] = batch_size
         metrics['device'] = str(device)
         metrics['data_range'] = data_range
+        metrics['input_dim'] = ndim
         
         return metrics
     
@@ -216,7 +292,7 @@ class ImageMetricsCalculator:
     
     def _calculate_ssim_torch(self, pred: torch.Tensor, target: torch.Tensor,
                              data_range: float = 1.0) -> torch.Tensor:
-        """PyTorch实现的SSIM计算"""
+        """PyTorch实现的SSIM计算（2D图像）"""
         C1 = (0.01 * data_range) ** 2
         C2 = (0.03 * data_range) ** 2
         
@@ -233,6 +309,62 @@ class ImageMetricsCalculator:
         sigma1_sq = F.avg_pool2d(pred * pred, window_size, stride=1, padding=padding) - mu1_sq
         sigma2_sq = F.avg_pool2d(target * target, window_size, stride=1, padding=padding) - mu2_sq
         sigma12 = F.avg_pool2d(pred * target, window_size, stride=1, padding=padding) - mu1_mu2
+        
+        ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+        
+        return ssim_map.mean()
+    
+    def _calculate_ssim_3d_torch(self, pred: torch.Tensor, target: torch.Tensor,
+                                data_range: float = 1.0) -> torch.Tensor:
+        """PyTorch实现的SSIM计算（3D图像）"""
+        # 获取图像尺寸
+        _, _, depth, height, width = pred.shape
+        
+        # 检查图像是否太小无法进行3D SSIM计算
+        min_dim = min(depth, height, width)
+        window_size = 11
+        
+        if min_dim < window_size:
+            # 图像太小，使用2D切片方法计算平均SSIM
+            # 这通常发生在深度维度较小的情况下（如[1, 1, 256, 256, 3]）
+            ssim_values = []
+            
+            # 遍历深度切片
+            for d in range(depth):
+                pred_slice = pred[:, :, d:d+1, :, :]  # 保持5D形状
+                target_slice = target[:, :, d:d+1, :, :]
+                
+                # 移除深度维度，转换为2D图像
+                pred_2d = pred_slice.squeeze(2)  # 形状: [1, 1, height, width]
+                target_2d = target_slice.squeeze(2)
+                
+                # 计算2D SSIM
+                ssim_val = self._calculate_ssim_torch(pred_2d, target_2d, data_range)
+                ssim_values.append(ssim_val)
+            
+            # 返回平均值
+            if ssim_values:
+                return torch.stack(ssim_values).mean()
+            else:
+                return torch.tensor(0.0, device=pred.device)
+        
+        # 正常情况：图像足够大，使用3D SSIM计算
+        C1 = (0.01 * data_range) ** 2
+        C2 = (0.03 * data_range) ** 2
+        
+        padding = window_size // 2
+        
+        # 使用3D平均池化
+        mu1 = F.avg_pool3d(pred, window_size, stride=1, padding=padding)
+        mu2 = F.avg_pool3d(target, window_size, stride=1, padding=padding)
+        
+        mu1_sq = mu1.pow(2)
+        mu2_sq = mu2.pow(2)
+        mu1_mu2 = mu1 * mu2
+        
+        sigma1_sq = F.avg_pool3d(pred * pred, window_size, stride=1, padding=padding) - mu1_sq
+        sigma2_sq = F.avg_pool3d(target * target, window_size, stride=1, padding=padding) - mu2_sq
+        sigma12 = F.avg_pool3d(pred * target, window_size, stride=1, padding=padding) - mu1_mu2
         
         ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
         
@@ -260,11 +392,52 @@ class ImageMetricsCalculator:
     
     def _calculate_ssim(self, pred: np.ndarray, target: np.ndarray) -> float:
         """计算结构相似性"""
-        if pred.ndim == 3 and pred.shape[0] == 1:
-            pred = pred[0]
-            target = target[0]
+        # 处理可能的批次和通道维度
+        original_ndim = pred.ndim
         
-        if pred.ndim == 2:
+        # 如果维度为5，可能是 (1, C, H, W, D) 或 (C, H, W, D, 1)
+        if original_ndim == 5:
+            # 移除大小为1的批次维度
+            if pred.shape[0] == 1:
+                pred = pred[0]
+                target = target[0]
+                original_ndim = 4
+        
+        # 如果维度为4，可能是 (C, H, W, D)
+        if original_ndim == 4:
+            # 计算每个深度切片的SSIM并取平均
+            ssim_values = []
+            for d in range(pred.shape[3]):
+                pred_slice = pred[:, :, :, d]
+                target_slice = target[:, :, :, d]
+                ssim_val = self._calculate_ssim(pred_slice, target_slice)
+                ssim_values.append(ssim_val)
+            return float(np.mean(ssim_values)) if ssim_values else 0.0
+        
+        # 如果维度为3，可能是 (C, H, W) 或 (H, W, D)
+        if original_ndim == 3:
+            # 检查是2D+通道还是3D体数据
+            if pred.shape[0] == 1:  # (1, H, W) - 单通道2D图像
+                pred = pred[0]
+                target = target[0]
+                # 现在应该是2D
+                return self._calculate_ssim(pred, target)
+            elif pred.shape[2] <= 16:  # 假设深度维度较小，按切片处理
+                ssim_values = []
+                for z in range(pred.shape[2]):
+                    pred_slice = pred[:, :, z]
+                    target_slice = target[:, :, z]
+                    ssim_val = self._calculate_ssim(pred_slice, target_slice)
+                    ssim_values.append(ssim_val)
+                return float(np.mean(ssim_values)) if ssim_values else 0.0
+            else:
+                # 可能是 (H, W, C) 格式，转换为 (C, H, W)
+                pred = np.transpose(pred, (2, 0, 1))
+                target = np.transpose(target, (2, 0, 1))
+                return self._calculate_ssim(pred, target)
+        
+        # 如果维度为2，直接计算SSIM
+        if original_ndim == 2:
             min_dim = min(pred.shape[0], pred.shape[1])
             win_size = min(7, min_dim)
             if win_size % 2 == 0:
@@ -289,16 +462,8 @@ class ImageMetricsCalculator:
                     win_size=win_size,
                     channel_axis=None
                 )
-        elif pred.ndim == 3:
-            ssim_values = []
-            for z in range(pred.shape[2]):
-                pred_slice = pred[:, :, z]
-                target_slice = target[:, :, z]
-                ssim_val = self._calculate_ssim(pred_slice, target_slice)
-                ssim_values.append(ssim_val)
-            return float(np.mean(ssim_values))
-        else:
-            raise ValueError(f"不支持的图像维度: {pred.ndim}")
+        
+        raise ValueError(f"不支持的图像维度: {original_ndim}")
     
     def _calculate_lpips(self, pred: torch.Tensor, target: torch.Tensor) -> float:
         """计算LPIPS指标"""
@@ -344,7 +509,7 @@ class ImageMetricsCalculator:
         
         return {
             'mean': float(np.mean(metric_values)),
-            'std': float(np.std(metric_values)),
+            'std': float(np.std(metric_values, ddof=0)),  # 使用ddof=0避免样本数为1时产生nan
             'min': float(np.min(metric_values)),
             'max': float(np.max(metric_values)),
             'median': float(np.median(metric_values)),
