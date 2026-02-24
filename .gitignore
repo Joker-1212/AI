@@ -9,3 +9,4 @@ test*
 debug*
 **/*.backup
 **/*.log
+diagnostics
