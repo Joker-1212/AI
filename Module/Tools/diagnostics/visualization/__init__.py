@@ -155,18 +155,34 @@ class ValidationVisualizer:
         return fig
     
     def _prepare_image(self, image: torch.Tensor) -> np.ndarray:
-        """准备图像用于可视化"""
+        """准备图像用于可视化（修复版本）"""
         # 转换为numpy
         if isinstance(image, torch.Tensor):
             image_np = image.detach().cpu().numpy()
         else:
             image_np = image
         
-        # 处理不同维度 - 改进版
+        # 处理不同维度 - 修复版
         if image_np.ndim == 5:  # (B, C, D, H, W) - 5D数据
             image_np = image_np[0, 0, image_np.shape[2] // 2]  # 取第一个样本，第一个通道，中间深度
-        elif image_np.ndim == 4:  # (B, C, H, W)
-            image_np = image_np[0, 0]  # 取第一个样本，第一个通道
+        elif image_np.ndim == 4:  # (C, D, H, W) 或 (C, H, W, D) 或 (B, C, H, W)
+            # 检测维度顺序
+            # 假设深度维度是最小的维度（对于CT图像通常成立）
+            dims = image_np.shape
+            if dims[0] == 1:  # 可能是 (C, ...) 格式
+                # 检查后三个维度中哪个最小
+                spatial_dims = dims[1:]
+                min_dim_idx = np.argmin(spatial_dims)
+                
+                if min_dim_idx == 0:  # 深度在第一维 (C, D, H, W)
+                    image_np = image_np[0, dims[1] // 2, :, :]
+                elif min_dim_idx == 1:  # 深度在第二维 (C, H, D, W)
+                    image_np = image_np[0, :, dims[2] // 2, :]
+                else:  # 深度在第三维 (C, H, W, D)
+                    image_np = image_np[0, :, :, dims[3] // 2]
+            else:
+                # 可能是 (B, C, H, W) 格式，没有深度维度
+                image_np = image_np[0, 0]  # 取第一个样本，第一个通道
         elif image_np.ndim == 3:  # (C, H, W) 或 (H, W, D) 或 (D, H, W)
             # 更智能的判断：检查哪个维度可能是通道维度
             # 通道维度通常较小（1, 3, 4等）且在第一个或最后一个位置

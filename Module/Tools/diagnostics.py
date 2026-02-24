@@ -994,35 +994,97 @@ class ValidationVisualizer:
         
         return fig
     
-    def _prepare_image(self, tensor: torch.Tensor) -> np.ndarray:
+    def _prepare_image(self, tensor: torch.Tensor, verbose: bool = False) -> np.ndarray:
         """
-        准备用于可视化的图像
+        准备用于可视化的图像（修复版本）
+        
+        修复问题：处理不同的维度顺序 (C, D, H, W) vs (C, H, W, D)
         
         参数:
-            tensor: 图像张量 (C, H, W) 或 (C, H, W, D)
+            tensor: 图像张量 (C, H, W) 或 (C, H, W, D) 或 (C, D, H, W)
+            verbose: 是否输出调试信息
             
         返回:
             2D numpy数组
+            
+        异常:
+            ValueError: 如果输入张量形状不支持
         """
-        # 转换为numpy
-        img = tensor.detach().cpu().numpy()
-        
-        # 移除通道维度
-        if len(img.shape) == 4:  # (C, H, W, D)
-            img = img[0]  # 取第一个通道
-            # 取中间切片
-            if len(img.shape) == 3:
-                img = img[:, :, img.shape[2] // 2]
-        elif len(img.shape) == 3:  # (C, H, W)
-            img = img[0]  # 取第一个通道
-        
-        # 归一化到[0, 1]用于显示
-        img_min = img.min()
-        img_max = img.max()
-        if img_max - img_min > 1e-8:
-            img = (img - img_min) / (img_max - img_min)
-        
-        return img
+        try:
+            # 输入验证
+            if not isinstance(tensor, torch.Tensor):
+                raise TypeError(f"输入必须是torch.Tensor类型，实际类型: {type(tensor)}")
+            
+            if tensor.dim() < 2:
+                raise ValueError(f"输入张量维度必须至少为2，实际维度: {tensor.dim()}")
+            
+            # 转换为numpy
+            img = tensor.detach().cpu().numpy()
+            
+            if verbose:
+                print(f"[DEBUG] 输入张量形状: {tensor.shape}")
+                print(f"[DEBUG] numpy数组形状: {img.shape}")
+            
+            # 移除通道维度
+            if len(img.shape) == 4:
+                img = img[0]  # 取第一个通道
+                
+                if verbose:
+                    print(f"[DEBUG] 取第一个通道后形状: {img.shape}")
+                
+                if len(img.shape) == 3:
+                    # 检测维度顺序
+                    # 假设深度维度是最小的维度（对于CT图像通常成立）
+                    dims = img.shape
+                    min_dim_idx = np.argmin(dims)
+                    
+                    if verbose:
+                        print(f"[DEBUG] 三维形状: {dims}, 最小维度索引: {min_dim_idx}")
+                    
+                    # 简单而可靠的逻辑：总是切片最小维度（深度维度）
+                    # 这对于 (C, D, H, W) 和 (C, H, W, D) 格式都有效
+                    slice_idx = dims[min_dim_idx] // 2
+                    
+                    if verbose:
+                        print(f"[DEBUG] 切片最小维度 {min_dim_idx}，索引 {slice_idx}")
+                    
+                    if min_dim_idx == 0:
+                        img = img[slice_idx, :, :]
+                    elif min_dim_idx == 1:
+                        img = img[:, slice_idx, :]
+                    else:  # min_dim_idx == 2
+                        img = img[:, :, slice_idx]
+            
+            elif len(img.shape) == 3:  # (C, H, W)
+                img = img[0]  # 取第一个通道
+                if verbose:
+                    print(f"[DEBUG] 三维输入，取第一个通道后形状: {img.shape}")
+            
+            elif len(img.shape) == 2:  # (H, W) 已经是2D图像
+                if verbose:
+                    print(f"[DEBUG] 二维输入，直接使用")
+                # 已经是2D，无需处理
+            else:
+                raise ValueError(f"不支持的张量形状: {img.shape}，期望维度为2, 3或4")
+            
+            # 归一化到[0, 1]用于显示
+            img_min = img.min()
+            img_max = img.max()
+            if img_max - img_min > 1e-8:
+                img = (img - img_min) / (img_max - img_min)
+            
+            if verbose:
+                print(f"[DEBUG] 最终图像形状: {img.shape}")
+            
+            return img
+            
+        except Exception as e:
+            error_msg = f"_prepare_image() 处理失败: {e}"
+            if verbose:
+                print(f"[ERROR] {error_msg}")
+            # 为了向后兼容性，返回一个占位符图像
+            # 但最好重新抛出异常让调用者处理
+            raise ValueError(error_msg) from e
 
 
 # 更新待办事项：验证集可视化功能完成
