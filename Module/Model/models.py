@@ -268,17 +268,17 @@ class MultiScaleModel(CTEnhancementModel):
         self.fusion = nn.Sequential(
             nn.Conv2d(features[0] * 3, features[0] * 2, kernel_size=3, padding=1),
             nn.BatchNorm2d(features[0] * 2),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.Conv2d(features[0] * 2, features[0], kernel_size=3, padding=1),
             nn.BatchNorm2d(features[0]),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
         )
         
         # 输出层，添加残差连接
         self.output = nn.Sequential(
             nn.Conv2d(features[0] + config.in_channels, features[0], kernel_size=3, padding=1),
             nn.BatchNorm2d(features[0]),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.Conv2d(features[0], config.out_channels, kernel_size=3, padding=1),
         )
     
@@ -328,10 +328,10 @@ class WaveletDomainCNNModel(CTEnhancementModel):
         self.refine = nn.Sequential(
             nn.Conv2d(config.out_channels, config.features[0], kernel_size=3, padding=1),
             nn.BatchNorm2d(config.features[0]),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.Conv2d(config.features[0], config.features[0] // 2, kernel_size=3, padding=1),
             nn.BatchNorm2d(config.features[0] // 2),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.Conv2d(config.features[0] // 2, config.out_channels, kernel_size=3, padding=1),
         )
     
@@ -493,7 +493,7 @@ class FBPConvNetModel(CTEnhancementModel):
         self.fbp_simulator = nn.Sequential(
             nn.Conv2d(config.in_channels, config.features[0], kernel_size=7, padding=3),
             nn.BatchNorm2d(config.features[0]),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.Conv2d(config.features[0], config.in_channels, kernel_size=7, padding=3),
         )
         

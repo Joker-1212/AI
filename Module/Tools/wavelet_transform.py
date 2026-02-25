@@ -260,10 +260,10 @@ class WaveletDomainProcessing(nn.Module):
         self.wavelet_conv = nn.Sequential(
             nn.Conv2d(self.wavelet_channels, self.wavelet_channels * 2, kernel_size=3, padding=1),
             nn.BatchNorm2d(self.wavelet_channels * 2),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.Conv2d(self.wavelet_channels * 2, self.wavelet_channels, kernel_size=3, padding=1),
             nn.BatchNorm2d(self.wavelet_channels),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
         )
         
         # 逆变换（对于DWT）

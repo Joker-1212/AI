@@ -61,11 +61,14 @@ class TrainingCurveAnalyzer:
         train_arr = np.array(train_losses)
         val_arr = np.array(val_losses)
         
-        # Calculate loss ratio
-        loss_ratio = val_arr / (train_arr + 1e-8)
+        # Calculate loss ratio list (historical ratios)
+        loss_ratio_list = val_arr / (train_arr + 1e-8)
+        
+        # Calculate final epoch loss ratio (single float value)
+        final_loss_ratio = float(val_arr[-1] / (train_arr[-1] + 1e-8))
         
         # Detect overfitting
-        overfitting_detected = False
+        is_overfitting = False
         overfitting_epoch = -1
         
         # Simple heuristic: if validation loss starts rising while training loss continues to fall
@@ -78,23 +81,33 @@ class TrainingCurveAnalyzer:
             train_trend = np.polyfit(range(5), recent_train, 1)[0]
             
             if val_trend > 0 and train_trend < 0:  # validation rising, training falling
-                overfitting_detected = True
+                is_overfitting = True
                 overfitting_epoch = epochs[-5]
+        
+        # Detect underfitting
+        underfitting_result = self._detect_underfitting(train_arr, val_arr, epochs)
         
         # Calculate statistics
         analysis = {
             'epochs': epochs,
             'train_losses': train_losses,
             'val_losses': val_losses,
-            'loss_ratio': loss_ratio.tolist(),
+            'loss_ratio': final_loss_ratio,  # Single float value (final epoch ratio)
+            'loss_ratio_list': loss_ratio_list.tolist(),  # Historical ratios list
             'final_train_loss': float(train_arr[-1]),
+            'train_loss_final': float(train_arr[-1]),  # Alias for compatibility
             'final_val_loss': float(val_arr[-1]),
             'min_val_loss': float(val_arr.min()),
             'min_val_epoch': int(epochs[val_arr.argmin()]),
-            'overfitting_detected': overfitting_detected,
+            'overfitting_detected': is_overfitting,
             'overfitting_epoch': overfitting_epoch,
             'val_train_gap': float(val_arr[-1] - train_arr[-1]),
-            'val_train_ratio': float(val_arr[-1] / (train_arr[-1] + 1e-8))
+            'overfitting_gap': float(val_arr[-1] - train_arr[-1]),  # Alias for compatibility
+            'val_train_ratio': float(val_arr[-1] / (train_arr[-1] + 1e-8)),
+            'is_underfitting': underfitting_result['is_underfitting'],
+            'underfitting_reason': underfitting_result['underfitting_reason'],
+            'train_loss_trend': underfitting_result['train_loss_trend'],
+            'val_loss_trend': underfitting_result['val_loss_trend']
         }
         
         return analysis
@@ -248,6 +261,85 @@ class TrainingCurveAnalyzer:
                 best_lr = avg_lr
         
         return float(best_lr)
+    
+    def _detect_underfitting(
+        self,
+        train_losses: np.ndarray,
+        val_losses: np.ndarray,
+        epochs: List[int]
+    ) -> Dict[str, Any]:
+        """
+        Detect underfitting phenomenon
+        
+        Args:
+            train_losses: Array of training losses
+            val_losses: Array of validation losses
+            epochs: Corresponding epoch numbers
+            
+        Returns:
+            Underfitting detection results
+        """
+        if len(train_losses) < 5:
+            return {
+                'is_underfitting': False,
+                'underfitting_reason': 'Insufficient data for analysis',
+                'train_loss_final': float(train_losses[-1]) if len(train_losses) > 0 else 0.0,
+                'train_loss_trend': 0.0,
+                'val_loss_trend': 0.0
+            }
+        
+        # Calculate recent trends (last 5 epochs or half of available data)
+        window_size = min(5, len(train_losses) // 2)
+        recent_train = train_losses[-window_size:]
+        recent_val = val_losses[-window_size:] if len(val_losses) >= window_size else val_losses
+        
+        # Calculate trends using linear regression
+        train_trend = np.polyfit(range(window_size), recent_train, 1)[0]  # slope
+        val_trend = np.polyfit(range(window_size), recent_val, 1)[0] if len(recent_val) >= 2 else 0.0
+        
+        # Underfitting detection criteria:
+        # 1. Training loss is still high (above threshold)
+        # 2. Training loss is decreasing slowly or not at all
+        # 3. Validation loss is also high and not improving
+        
+        final_train_loss = float(train_losses[-1])
+        final_val_loss = float(val_losses[-1]) if len(val_losses) > 0 else 0.0
+        
+        # Determine if underfitting is detected
+        is_underfitting = False
+        underfitting_reason = ''
+        
+        # Criterion 1: Training loss is high (above 0.5 as a heuristic threshold)
+        if final_train_loss > 0.5:
+            # Criterion 2: Training loss is decreasing slowly (slope > -0.01)
+            if train_trend > -0.01:
+                is_underfitting = True
+                underfitting_reason = 'High training loss with slow improvement'
+            # Criterion 3: Both training and validation losses are high and not improving
+            elif final_val_loss > 0.5 and val_trend > -0.01:
+                is_underfitting = True
+                underfitting_reason = 'Both training and validation losses are high with slow improvement'
+        
+        # Additional criterion: If training loss has plateaued early
+        if len(train_losses) >= 10:
+            early_train = train_losses[:5]
+            late_train = train_losses[-5:]
+            early_avg = np.mean(early_train)
+            late_avg = np.mean(late_train)
+            
+            # If improvement is less than 10% in the last half of training
+            if (early_avg - late_avg) / early_avg < 0.1:
+                is_underfitting = True
+                underfitting_reason = 'Training loss plateaued early with minimal improvement'
+        
+        return {
+            'is_underfitting': is_underfitting,
+            'underfitting_reason': underfitting_reason,
+            'train_loss_final': final_train_loss,
+            'train_loss_trend': float(train_trend),
+            'val_loss_trend': float(val_trend) if len(val_losses) >= 2 else 0.0,
+            'final_val_loss': final_val_loss
+        }
     
     def generate_training_report(
         self,

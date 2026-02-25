@@ -4,7 +4,7 @@ notebooks
 *.html
 Logs
 **/__pycache__
-configs/*.pdf
+# configs/*.pdf
 test*
 debug*
 **/*.backup

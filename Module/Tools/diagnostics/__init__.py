@@ -30,7 +30,7 @@ __all__ = [
 
 # 版本信息
 __version__ = '2.0.0'
-__author__ = 'AI Team'
+__author__ = 'Joker_1212'
 
 # 向后兼容性：导出原始模块中的主要类
 def __getattr__(name):

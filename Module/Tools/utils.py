@@ -3,6 +3,7 @@
 """
 import os
 import time
+import logging
 import torch
 import torch.nn as nn
 import numpy as np
@@ -10,6 +11,41 @@ from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import matplotlib.pyplot as plt
 from typing import Tuple, Dict, Any, Optional
 import yaml
+
+
+def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
+    """
+    获取配置好的日志记录器
+    
+    参数:
+        name: 日志记录器名称
+        level: 日志级别
+        
+    返回:
+        配置好的日志记录器
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    
+    # 如果已经有处理器，直接返回
+    if logger.handlers:
+        return logger
+    
+    # 清除现有处理器
+    logger.handlers.clear()
+    
+    # 创建格式化器
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # 创建控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    return logger
 
 
 def save_checkpoint(model: nn.Module, optimizer: torch.optim.Optimizer,

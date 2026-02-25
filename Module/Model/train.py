@@ -69,7 +69,7 @@ class Trainer:
         self.use_amp = getattr(config.training, 'use_amp', False)
         self.scaler = None
         if self.use_amp:
-            self.scaler = torch.cuda.amp.GradScaler()
+            self.scaler = torch.amp.GradScaler()
         
         # 日志和监控
         self.log_interval = getattr(config.training, 'log_interval', 10)
@@ -705,8 +705,15 @@ class Trainer:
         print("开始训练...")
         start_time = time.time()
         
+        # 在训练开始时添加模型输出范围检查
+        self._check_model_output_range()
+        
         for epoch in range(self.current_epoch, self.config.training.num_epochs):
             self.current_epoch = epoch
+            
+            # 添加梯度范数监控
+            if epoch % 10 == 0:  # 每10个epoch监控一次
+                self._monitor_gradient_norms()
             
             # 训练
             train_loss = self.train_epoch()
@@ -969,6 +976,118 @@ class Trainer:
             
         except ImportError:
             print("警告: 未安装matplotlib，无法绘制训练曲线")
+    
+    def _check_model_output_range(self):
+        """
+        检查模型输出范围
+        
+        在训练开始时验证模型输出是否在合理范围内
+        """
+        print("检查模型输出范围...")
+        self.model.eval()
+        
+        try:
+            # 获取一个批次的数据
+            low_dose, full_dose = next(iter(self.train_loader))
+            low_dose = low_dose.to(self.device)
+            
+            with torch.no_grad():
+                # 前向传播
+                output = self.model(low_dose)
+                
+                # 检查输出范围
+                min_val = output.min().item()
+                max_val = output.max().item()
+                mean_val = output.mean().item()
+                std_val = output.std().item()
+                
+                print(f"  模型输出统计:")
+                print(f"    最小值: {min_val:.6f}")
+                print(f"    最大值: {max_val:.6f}")
+                print(f"    平均值: {mean_val:.6f}")
+                print(f"    标准差: {std_val:.6f}")
+                
+                # 检查是否有异常值
+                if torch.isnan(output).any():
+                    print("  ⚠️ 警告: 模型输出包含NaN值!")
+                if torch.isinf(output).any():
+                    print("  ⚠️ 警告: 模型输出包含无穷大值!")
+                
+                # 检查输出是否在合理范围内（对于CT图像，通常在[-1000, 1000] HU范围内）
+                if abs(min_val) > 2000 or abs(max_val) > 2000:
+                    print("  ⚠️ 警告: 模型输出范围异常，可能超出CT图像典型范围")
+                else:
+                    print("  ✓ 模型输出范围正常")
+                    
+        except Exception as e:
+            print(f"  模型输出范围检查失败: {e}")
+        
+        self.model.train()
+    
+    def _monitor_gradient_norms(self):
+        """
+        监控梯度范数
+        
+        计算并记录模型参数的梯度范数
+        """
+        print(f"监控梯度范数 (Epoch {self.current_epoch})...")
+        
+        total_norm = 0.0
+        param_count = 0
+        gradient_stats = {}
+        
+        for name, param in self.model.named_parameters():
+            if param.grad is not None:
+                # 计算该参数的梯度范数
+                param_norm = param.grad.data.norm(2).item()
+                total_norm += param_norm ** 2
+                param_count += 1
+                
+                # 记录各层梯度统计
+                layer_name = name.split('.')[0] if '.' in name else name
+                if layer_name not in gradient_stats:
+                    gradient_stats[layer_name] = {
+                        'count': 0,
+                        'sum_norm': 0.0,
+                        'max_norm': 0.0
+                    }
+                
+                gradient_stats[layer_name]['count'] += 1
+                gradient_stats[layer_name]['sum_norm'] += param_norm
+                gradient_stats[layer_name]['max_norm'] = max(
+                    gradient_stats[layer_name]['max_norm'], param_norm
+                )
+        
+        if param_count > 0:
+            # 计算总梯度范数
+            total_norm = total_norm ** 0.5
+            avg_norm = total_norm / param_count
+            
+            print(f"  总梯度范数: {total_norm:.6f}")
+            print(f"  平均梯度范数: {avg_norm:.6f}")
+            print(f"  有梯度的参数数量: {param_count}")
+            
+            # 记录到TensorBoard
+            if hasattr(self, 'writer'):
+                self.writer.add_scalar('gradients/total_norm', total_norm, self.current_epoch)
+                self.writer.add_scalar('gradients/avg_norm', avg_norm, self.current_epoch)
+            
+            # 检查梯度消失/爆炸
+            if total_norm < 1e-7:
+                print("  ⚠️ 警告: 梯度可能消失 (总范数 < 1e-7)")
+            elif total_norm > 1000:
+                print("  ⚠️ 警告: 梯度可能爆炸 (总范数 > 1000)")
+            else:
+                print("  ✓ 梯度范数正常")
+            
+            # 打印各层梯度统计
+            if len(gradient_stats) <= 10:  # 避免输出过多
+                print("  各层梯度统计:")
+                for layer_name, stats in gradient_stats.items():
+                    avg_layer_norm = stats['sum_norm'] / stats['count'] if stats['count'] > 0 else 0
+                    print(f"    {layer_name}: 平均={avg_layer_norm:.6f}, 最大={stats['max_norm']:.6f}")
+        else:
+            print("  没有找到梯度信息")
     
     def test(self):
         """在测试集上评估"""

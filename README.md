@@ -494,7 +494,7 @@ python -m Module.Tools.diagnostics training \
 ```bibtex
 @software{low_dose_ct_enhancement_2025,
   title = {低剂量CT图像增强AI},
-  author = {AI团队},
+  author = {Joker_1212},
   year = {2025},
   url = {https://github.com/yourusername/low-dose-ct-enhancement},
   note = {用于增强低剂量CT图像的深度学习框架}

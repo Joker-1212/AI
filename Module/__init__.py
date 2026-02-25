@@ -5,7 +5,7 @@ This module provides tools for enhancing low-dose CT images using deep learning.
 """
 
 __version__ = "1.0.0"
-__author__ = "CT Enhancement AI Team"
+__author__ = "Joker_1212"
 __license__ = "MIT"
 
 # Core components
