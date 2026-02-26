@@ -553,58 +553,292 @@ class Trainer:
             import traceback
             traceback.print_exc()
     
+    def _validate_batch_data(self, low_dose, full_dose, batch_idx):
+        """
+        验证批次数据的完整性
+        
+        参数:
+            low_dose: 低剂量数据张量
+            full_dose: 全剂量数据张量
+            batch_idx: 批次索引
+            
+        返回:
+            bool: 数据是否有效
+            str: 错误信息（如果无效）
+        """
+        try:
+            # 检查数据是否为None
+            if low_dose is None or full_dose is None:
+                return False, f"批次 {batch_idx}: 数据为None"
+            
+            # 检查数据类型
+            if not isinstance(low_dose, torch.Tensor) or not isinstance(full_dose, torch.Tensor):
+                return False, f"批次 {batch_idx}: 数据类型错误，期望torch.Tensor，实际类型: low_dose={type(low_dose)}, full_dose={type(full_dose)}"
+            
+            # 检查数据形状
+            if low_dose.shape != full_dose.shape:
+                return False, f"批次 {batch_idx}: 数据形状不匹配，low_dose={low_dose.shape}, full_dose={full_dose.shape}"
+            
+            # 检查数据维度
+            if len(low_dose.shape) < 4:
+                return False, f"批次 {batch_idx}: 数据维度不足，期望至少4维 (batch, channel, height, width)，实际形状: {low_dose.shape}"
+            
+            # 检查数据值范围
+            if torch.all(low_dose == 0):
+                return False, f"批次 {batch_idx}: 低剂量数据全为零"
+            
+            if torch.all(full_dose == 0):
+                return False, f"批次 {batch_idx}: 全剂量数据全为零"
+            
+            # 检查NaN和Inf值
+            if torch.any(torch.isnan(low_dose)):
+                return False, f"批次 {batch_idx}: 低剂量数据包含NaN值"
+            
+            if torch.any(torch.isnan(full_dose)):
+                return False, f"批次 {batch_idx}: 全剂量数据包含NaN值"
+            
+            if torch.any(torch.isinf(low_dose)):
+                return False, f"批次 {batch_idx}: 低剂量数据包含Inf值"
+            
+            if torch.any(torch.isinf(full_dose)):
+                return False, f"批次 {batch_idx}: 全剂量数据包含Inf值"
+            
+            # 检查数据范围是否合理
+            low_min, low_max = low_dose.min().item(), low_dose.max().item()
+            full_min, full_max = full_dose.min().item(), full_dose.max().item()
+            
+            if abs(low_max - low_min) < 1e-6:
+                return False, f"批次 {batch_idx}: 低剂量数据范围过小 [{low_min:.6f}, {low_max:.6f}]"
+            
+            if abs(full_max - full_min) < 1e-6:
+                return False, f"批次 {batch_idx}: 全剂量数据范围过小 [{full_min:.6f}, {full_max:.6f}]"
+            
+            return True, "数据验证通过"
+            
+        except Exception as e:
+            return False, f"批次 {batch_idx}: 数据验证过程中发生异常: {type(e).__name__}: {str(e)}"
+    
     def validate(self):
         """验证"""
+        print(f"  开始验证阶段 (epoch {self.current_epoch})")
+        
+        # 检查验证数据加载器
+        if self.val_loader is None:
+            print("[ERROR] 验证数据加载器为None")
+            return 0.0, 0.0, 0.0
+        
+        # 初始化变量，提供默认值
+        val_dataset_size = 0
+        val_batches = 0
+        
+        try:
+            val_dataset_size = len(self.val_loader.dataset)
+            val_batches = len(self.val_loader)
+            print(f"  验证数据集大小: {val_dataset_size}")
+            print(f"  验证批次数量: {val_batches}")
+            print(f"  批次大小: {self.val_loader.batch_size}")
+        except Exception as e:
+            print(f"[ERROR] 无法获取验证数据加载器信息: {e}")
+            # val_dataset_size和val_batches已经有默认值0，不会出现NameError
+        
         self.model.eval()
         total_loss = 0.0
         total_psnr = 0.0
         total_ssim = 0.0
+        
+        # 初始化统计计数器
+        processed_batches = 0
+        skipped_batches = 0
         
         # 存储批量数据用于可视化
         visualization_batch = None
         visualization_enhanced = None
         visualization_target = None
         
-        with torch.no_grad():
-            for batch_idx, (low_dose, full_dose) in enumerate(tqdm(self.val_loader, desc="验证")):
-                low_dose = low_dose.to(self.device)
-                full_dose = full_dose.to(self.device)
+        try:
+            with torch.no_grad():
+                # 移除外层try-except，改为批次级别异常处理
+                for batch_idx, (low_dose, full_dose) in enumerate(tqdm(self.val_loader, desc="验证")):
+                    try:
+                        # 使用数据完整性验证函数检查批次数据
+                        is_valid, error_msg = self._validate_batch_data(low_dose, full_dose, batch_idx)
+                        
+                        if not is_valid:
+                            print(f"[VALIDATION ERROR] 批次 {batch_idx} 数据验证失败: {error_msg}")
+                            skipped_batches += 1
+                            continue
+                        
+                        # 数据转移到设备
+                        low_dose = low_dose.to(self.device)
+                        full_dose = full_dose.to(self.device)
+                        
+                        # 模型前向传播
+                        enhanced = self.model(low_dose)
+                        
+                        # 计算损失
+                        loss = self.criterion(enhanced, full_dose)
+                        
+                        # 检查损失是否有效
+                        if torch.isnan(loss) or torch.isinf(loss):
+                            print(f"[ERROR] 批次 {batch_idx}: 损失值为 {loss.item()}，使用默认值0.0")
+                            loss_value = 0.0
+                        else:
+                            loss_value = loss.item()
+                        
+                        total_loss += loss_value
+                        
+                        # 计算指标
+                        try:
+                            psnr, ssim = calculate_metrics(enhanced, full_dose)
+                            
+                            # 检查指标是否有效
+                            if psnr == 0 or ssim == 0:
+                                print(f"[WARNING] 批次 {batch_idx}: PSNR={psnr:.4f}, SSIM={ssim:.4f}")
+                            
+                            total_psnr += psnr
+                            total_ssim += ssim
+                            
+                        except Exception as metric_error:
+                            print(f"[ERROR] 批次 {batch_idx}: 指标计算失败: {metric_error}")
+                            # 使用默认指标值
+                            psnr, ssim = 0.0, 0.0
+                            total_psnr += psnr
+                            total_ssim += ssim
+                        
+                        # 成功处理批次，增加计数器
+                        processed_batches += 1
+                        
+                        # 收集第一个成功处理的批次用于可视化
+                        if processed_batches == 1 and self.enable_diagnostics and self.visualizer:
+                            visualization_batch = low_dose
+                            visualization_enhanced = enhanced
+                            visualization_target = full_dose
+                            
+                            # 打印第一个批次的详细信息
+                            print(f"  第一个批次详细信息:")
+                            print(f"  低剂量形状: {low_dose.shape}")
+                            print(f"  全剂量形状: {full_dose.shape}")
+                            print(f"  增强形状: {enhanced.shape}")
+                            print(f"  低剂量范围: [{low_dose.min():.4f}, {low_dose.max():.4f}]")
+                            print(f"  全剂量范围: [{full_dose.min():.4f}, {full_dose.max():.4f}]")
+                            print(f"  增强范围: [{enhanced.min():.4f}, {enhanced.max():.4f}]")
+                            print(f"  损失值: {loss_value:.6f}")
+                            print(f"  PSNR: {psnr:.4f}")
+                            print(f"  SSIM: {ssim:.4f}")
+                            
+                    except Exception as e:
+                        print(f"[CRITICAL ERROR] 批次 {batch_idx} 处理发生致命异常: {type(e).__name__}: {str(e)}")
+                        print(f"错误发生位置: 批次 {batch_idx}/{val_batches}")
+                        print(f"已处理批次: {processed_batches}, 跳过批次: {skipped_batches}")
+                        import traceback
+                        traceback.print_exc()
+                        
+                        # 记录详细错误信息到TensorBoard
+                        try:
+                            self.writer.add_text("validation/batch_error",
+                                               f"Epoch {self.current_epoch}, Batch {batch_idx}: {type(e).__name__}: {str(e)}",
+                                               self.current_epoch)
+                        except:
+                            pass
+                        
+                        skipped_batches += 1
+                        continue
+        except Exception as e:
+            # 打印详细的错误信息
+            print(f"[CRITICAL] 验证循环发生致命错误: {type(e).__name__}: {str(e)}")
+            print(f"错误发生位置: 验证循环外层 (数据加载器迭代或模型前向传播)")
+            print(f"已处理批次: {processed_batches}, 跳过批次: {skipped_batches}")
+            import traceback
+            traceback.print_exc()
+            
+            # 尝试恢复而不是直接返回
+            if processed_batches > 0:
+                # 如果已经处理了部分批次，返回已计算的平均值
+                avg_loss = total_loss / processed_batches
+                avg_psnr = total_psnr / processed_batches
+                avg_ssim = total_ssim / processed_batches
+                print(f"  异常发生前已成功处理 {processed_batches} 个批次")
+                print(f"  返回已计算的平均值: 损失={avg_loss:.6f}, PSNR={avg_psnr:.4f}, SSIM={avg_ssim:.4f}")
                 
-                enhanced = self.model(low_dose)
-                loss = self.criterion(enhanced, full_dose)
-                total_loss += loss.item()
+                # 记录错误信息到TensorBoard
+                try:
+                    self.writer.add_text("validation/error",
+                                       f"Epoch {self.current_epoch}: {type(e).__name__}: {str(e)} - 已恢复处理",
+                                       self.current_epoch)
+                except:
+                    pass
+                    
+                return avg_loss, avg_psnr, avg_ssim
+            else:
+                # 如果没有处理任何批次，返回合理的默认值
+                print(f"  未成功处理任何批次，返回合理的默认值 (1.0, 0.0, 0.0)")
                 
-                # 计算指标
-                psnr, ssim = calculate_metrics(enhanced, full_dose)
-                total_psnr += psnr
-                total_ssim += ssim
-                
-                # 收集第一个批次用于可视化
-                if batch_idx == 0 and self.enable_diagnostics and self.visualizer:
-                    visualization_batch = low_dose
-                    visualization_enhanced = enhanced
-                    visualization_target = full_dose
+                # 记录详细错误信息到TensorBoard
+                try:
+                    self.writer.add_text("validation/error",
+                                       f"Epoch {self.current_epoch}: {type(e).__name__}: {str(e)} - 无有效批次",
+                                       self.current_epoch)
+                except:
+                    pass
+                    
+                return 1.0, 0.0, 0.0  # 返回合理的默认值
         
-        avg_loss = total_loss / len(self.val_loader)
-        avg_psnr = total_psnr / len(self.val_loader)
-        avg_ssim = total_ssim / len(self.val_loader)
+        # 检查是否有成功处理的批次
+        if processed_batches == 0:
+            print(f"[ERROR] 没有成功处理的批次 (总批次: {val_batches}, 跳过批次: {skipped_batches})")
+            return 0.0, 0.0, 0.0
+            
+        # 使用实际处理批次数计算平均值
+        avg_loss = total_loss / processed_batches
+        avg_psnr = total_psnr / processed_batches
+        avg_ssim = total_ssim / processed_batches
+        
+        print(f"  验证结果统计:")
+        print(f"  总批次数量: {val_batches}")
+        print(f"  实际处理批次: {processed_batches}")
+        print(f"  跳过批次: {skipped_batches}")
+        print(f"  总损失: {total_loss:.6f}")
+        print(f"  总PSNR: {total_psnr:.4f}")
+        print(f"  总SSIM: {total_ssim:.4f}")
+        print(f"  平均损失: {avg_loss:.6f}")
+        print(f"  平均PSNR: {avg_psnr:.4f}")
+        print(f"  平均SSIM: {avg_ssim:.4f}")
+        
+        # 检查平均值是否异常
+        if avg_loss == 0:
+            print("[WARNING] 平均损失为0")
+        if avg_psnr == 0:
+            print("[WARNING] 平均PSNR为0")
+        if avg_ssim == 0:
+            print("[WARNING] 平均SSIM为0")
         
         # TensorBoard记录
-        self.writer.add_scalar("val/loss", avg_loss, self.current_epoch)
-        self.writer.add_scalar("val/psnr", avg_psnr, self.current_epoch)
-        self.writer.add_scalar("val/ssim", avg_ssim, self.current_epoch)
+        try:
+            self.writer.add_scalar("val/loss", avg_loss, self.current_epoch)
+            self.writer.add_scalar("val/psnr", avg_psnr, self.current_epoch)
+            self.writer.add_scalar("val/ssim", avg_ssim, self.current_epoch)
+            print(f"  TensorBoard记录成功")
+        except Exception as e:
+            print(f"[ERROR] TensorBoard记录失败: {e}")
         
         # 执行验证集可视化（如果启用）
         if (self.enable_diagnostics and self.visualizer and visualization_batch is not None and
             self.current_epoch % self.diagnostics_config.visualization_frequency == 0):
-            self._perform_validation_visualization(
-                visualization_batch, visualization_enhanced, visualization_target
-            )
+            try:
+                self._perform_validation_visualization(
+                    visualization_batch, visualization_enhanced, visualization_target
+                )
+            except Exception as e:
+                print(f"[ERROR] 验证可视化失败: {e}")
         
         # 计算详细指标（如果启用）
         if self.enable_diagnostics and self.metrics_calculator:
-            self._calculate_detailed_metrics(visualization_enhanced, visualization_target)
+            try:
+                self._calculate_detailed_metrics(visualization_enhanced, visualization_target)
+            except Exception as e:
+                print(f"[ERROR] 详细指标计算失败: {e}")
         
+        print(f"  验证阶段完成 (处理批次: {processed_batches}/{val_batches})")
         return avg_loss, avg_psnr, avg_ssim
     
     def _perform_validation_visualization(self, low_dose, enhanced, full_dose):

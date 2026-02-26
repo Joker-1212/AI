@@ -159,11 +159,11 @@ class PreloadedDataset(Dataset):
                     logger.info(f"估算总内存需求: {estimated_size_mb:.1f} MB")
                 
                 # 进度报告
-                if (i + 1) % 10 == 0 or (i + 1) == len(self.original_dataset):
-                    elapsed = time.time() - start_time
-                    speed = (i + 1) / elapsed if elapsed > 0 else 0
-                    logger.info(f"  已加载 {i + 1}/{len(self.original_dataset)} 个样本 "
-                               f"({speed:.1f} 样本/秒)")
+                # if (i + 1) % 10 == 0 or (i + 1) == len(self.original_dataset):
+                    # elapsed = time.time() - start_time
+                    # speed = (i + 1) / elapsed if elapsed > 0 else 0
+                    # logger.info(f"  已加载 {i + 1}/{len(self.original_dataset)} 个样本 "
+                            #    f"({speed:.1f} 样本/秒)")
             
             except Exception as e:
                 logger.error(f"预加载样本 {i} 失败: {e}")
@@ -411,8 +411,8 @@ class MemoryMappedDataset(Dataset):
                 if (i + 1) % 10 == 0 or (i + 1) == len(self.original_dataset):
                     elapsed = time.time() - start_time
                     speed = (i + 1) / elapsed if elapsed > 0 else 0
-                    logger.info(f"  已缓存 {i + 1}/{len(self.original_dataset)} 个样本 "
-                               f"({speed:.1f} 样本/秒)")
+                    # logger.info(f"  已缓存 {i + 1}/{len(self.original_dataset)} 个样本 "
+                    #            f"({speed:.1f} 样本/秒)")
             
             except Exception as e:
                 logger.error(f"缓存样本 {i} 失败: {e}")

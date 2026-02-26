@@ -81,9 +81,84 @@ class CTDataset(Dataset):
         # 确保路径匹配
         assert len(low_dose_paths) == len(full_dose_paths), \
             "低剂量和全剂量图像数量不匹配"
+        
+        # 数据验证和统计
+        self._validate_data_config()
+        if low_dose_paths and full_dose_paths:
+            self._collect_data_statistics()
     
     def __len__(self):
         return len(self.low_dose_paths)
+    
+    def _validate_data_config(self):
+        """验证数据配置"""
+        # 验证归一化范围
+        if self.config.normalize:
+            min_val, max_val = self.config.normalize_range
+            if min_val >= max_val:
+                raise ValueError(f"归一化范围无效: {min_val} >= {max_val}")
+            
+            # 检查归一化范围是否合理
+            if abs(max_val - min_val) < 1e-6:
+                warnings.warn(f"归一化范围过小: {self.config.normalize_range}")
+            
+            print(f"数据配置验证通过: normalize_range={self.config.normalize_range}, normalize={self.config.normalize}")
+    
+    def _collect_data_statistics(self, sample_size: int = 5):
+        """收集数据统计信息"""
+        if not self.low_dose_paths or not self.full_dose_paths:
+            return
+        
+        print("正在收集数据统计信息...")
+        
+        # 采样检查数据范围
+        sample_indices = np.random.choice(
+            min(len(self.low_dose_paths), sample_size),
+            size=min(sample_size, len(self.low_dose_paths)),
+            replace=False
+        )
+        
+        low_dose_stats = []
+        full_dose_stats = []
+        
+        for idx in sample_indices:
+            try:
+                low_dose = self._load_image(self.low_dose_paths[idx])
+                full_dose = self._load_image(self.full_dose_paths[idx])
+                
+                low_dose_stats.append({
+                    'min': low_dose.min(),
+                    'max': low_dose.max(),
+                    'mean': low_dose.mean(),
+                    'std': low_dose.std()
+                })
+                
+                full_dose_stats.append({
+                    'min': full_dose.min(),
+                    'max': full_dose.max(),
+                    'mean': full_dose.mean(),
+                    'std': full_dose.std()
+                })
+            except Exception as e:
+                warnings.warn(f"加载样本 {idx} 失败: {e}")
+        
+        if low_dose_stats and full_dose_stats:
+            # 计算平均统计
+            low_min = np.mean([s['min'] for s in low_dose_stats])
+            low_max = np.mean([s['max'] for s in low_dose_stats])
+            full_min = np.mean([s['min'] for s in full_dose_stats])
+            full_max = np.mean([s['max'] for s in full_dose_stats])
+            
+            print(f"低剂量数据范围: [{low_min:.2f}, {low_max:.2f}]")
+            print(f"全剂量数据范围: [{full_min:.2f}, {full_max:.2f}]")
+            
+            # 检查数据是否在归一化范围内
+            if self.config.normalize:
+                norm_min, norm_max = self.config.normalize_range
+                if low_min < norm_min or low_max > norm_max:
+                    warnings.warn(f"低剂量数据范围 [{low_min:.2f}, {low_max:.2f}] 超出归一化范围 [{norm_min}, {norm_max}]")
+                if full_min < norm_min or full_max > norm_max:
+                    warnings.warn(f"全剂量数据范围 [{full_min:.2f}, {full_max:.2f}] 超出归一化范围 [{norm_min}, {norm_max}]")
     
     def __getitem__(self, idx):
         # 加载图像
@@ -233,14 +308,49 @@ def prepare_data_loaders(config: DataConfig) -> Tuple[DataLoader, DataLoader, Da
     
     # 分割数据集
     n_total = len(low_dose_files)
+    
+    # 确保验证集和测试集至少包含1个样本
     n_train = int(n_total * config.train_split)
-    n_val = int(n_total * config.val_split)
+    n_val = max(1, int(n_total * config.val_split))  # 确保至少1个验证样本
     n_test = n_total - n_train - n_val
+    
+    # 如果测试集为负数，调整训练集大小
+    if n_test < 1:
+        # 重新计算训练集大小，确保验证集和测试集都有至少1个样本
+        n_test = 1
+        n_val = max(1, int(n_total * config.val_split))
+        n_train = n_total - n_val - n_test
+        
+        # 确保训练集至少为1
+        if n_train < 1:
+            n_train = 1
+            n_val = min(n_val, n_total - 2)  # 调整验证集大小
+            n_test = n_total - n_train - n_val
+    
+    # 验证分割结果
+    if n_val < 1 or n_test < 1 or n_train < 1:
+        raise ValueError(f"数据集分割失败: n_total={n_total}, n_train={n_train}, n_val={n_val}, n_test={n_test}")
+    
+    # 检查分割比例是否合理
+    if n_val < 2:
+        warnings.warn(f"验证集样本数量较少 ({n_val})，可能影响验证效果。建议增加数据集大小或调整val_split参数。")
+    if n_test < 2:
+        warnings.warn(f"测试集样本数量较少 ({n_test})，可能影响测试效果。建议增加数据集大小或调整train_split参数。")
+    
+    # 输出分割信息
+    print(f"数据集分割: 总共 {n_total} 个样本 -> 训练: {n_train}, 验证: {n_val}, 测试: {n_test}")
+    print(f"分割比例: 训练 {n_train/n_total*100:.1f}%, 验证 {n_val/n_total*100:.1f}%, 测试 {n_test/n_total*100:.1f}%")
     
     indices = np.random.permutation(n_total)
     train_idx = indices[:n_train]
     val_idx = indices[n_train:n_train + n_val]
     test_idx = indices[n_train + n_val:]
+    
+    # 验证索引范围
+    if len(val_idx) == 0:
+        raise ValueError("验证集索引为空，请检查数据集分割逻辑")
+    if len(test_idx) == 0:
+        raise ValueError("测试集索引为空，请检查数据集分割逻辑")
     
     # 创建数据集
     train_dataset = CTDataset(
@@ -483,8 +593,8 @@ def _preload_dataset(dataset):
             for i in range(len(original_dataset)):
                 low, full = original_dataset[i]
                 self.data.append((low, full))
-                if (i + 1) % 10 == 0:
-                    print(f"  已加载 {i + 1}/{len(original_dataset)} 个样本")
+                # if (i + 1) % 10 == 0:
+                    # print(f"  已加载 {i + 1}/{len(original_dataset)} 个样本")
             
             print("预加载完成")
         

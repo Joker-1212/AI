@@ -1,0 +1,136 @@
+# 高级训练配置
+# 修复归一化范围问题：将(-1000, 1000)改为(-0.1, 0.1)以适应实际数据范围
+
+data:
+  data_dir: "./data"
+  low_dose_dir: "qd"
+  full_dose_dir: "fd"
+  image_size: [512, 512, 1]
+  batch_size: 4
+  num_workers: 0
+  pin_memory: false
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  normalize: true
+  normalize_range: [-0.1, 0.1]  # 修复：改为适合实际数据范围的值
+
+model:
+  model_name: "WaveletDomainCNN"
+  in_channels: 1
+  out_channels: 1
+  features: [32, 64, 128, 256]
+  dropout: 0.1
+  use_batch_norm: true
+  activation: "ReLU"
+
+training:
+  learning_rate: 0.0001
+  num_epochs: 200
+  optimizer: "AdamW"
+  weight_decay: 1e-05
+  
+  # 损失函数配置
+  loss_function: "MixedLoss"
+  loss_weights: [1.0, 0.5, 0.1]
+  use_multi_scale_loss: true
+  multi_scale_weights: [1.0, 0.5, 0.25]
+  
+  # 学习率调度
+  scheduler: "CosineWarmRestarts"
+  patience: 15
+  min_lr: 1e-06
+  scheduler_factor: 0.5
+  scheduler_step_size: 20
+  scheduler_gamma: 0.5
+  scheduler_milestones: [50, 100, 150]
+  
+  # 高级训练策略
+  warmup_epochs: 5
+  gradient_clip_value: 1.0
+  gradient_clip_norm: null
+  use_early_stopping: true
+  early_stopping_patience: 30
+  
+  # 混合精度训练
+  use_amp: false
+  
+  # 日志和监控
+  log_interval: 10
+  save_interval: 10
+  monitor_metrics: ["loss", "psnr", "ssim"]
+  
+  # 路径配置
+  checkpoint_dir: "./models/advanced_checkpoints"
+  log_dir: "./logs/advanced_training"
+  device: "cuda"
+
+diagnostics:
+  # 启用诊断功能
+  enable_diagnostics: true
+  
+  # 指标计算配置
+  compute_rmse: true
+  compute_mae: true
+  compute_psnr: true
+  compute_ssim: true
+  compute_ms_ssim: false
+  compute_lpips: false
+  
+  # 可视化配置
+  visualize_samples: 5
+  save_visualizations: true
+  visualization_dir: "./diagnostics/visualizations"
+  dpi: 150
+  visualization_frequency: 5
+  
+  # 模型诊断配置
+  check_gradients: true
+  check_weights: true
+  check_activations: false
+  check_dead_relu: true
+  model_diagnosis_frequency: 10
+  
+  # 训练分析配置
+  analyze_overfitting: true
+  compute_loss_ratio: true
+  check_learning_rate: true
+  training_analysis_frequency: 5
+  
+  # 报告配置
+  generate_html_report: true
+  generate_pdf_report: false
+  report_dir: "./diagnostics/reports"
+
+windows_optimization:
+  enable_windows_optimization: true
+  platform_detection: "auto"
+  data_loader_type: "windows_optimized"
+  use_memory_mapped_files: true
+  memory_map_cache_size: 1024
+  preload_data_to_ram: false
+  preload_batch_count: 100
+  num_workers: 0
+  use_thread_pool: true
+  thread_pool_size: 4
+  thread_priority: "normal"
+  pin_memory: false
+  memory_allocation_strategy: "balanced"
+  max_memory_usage_mb: 4096
+  garbage_collection_frequency: 100
+  enable_performance_monitoring: true
+  monitor_interval_seconds: 30
+  log_performance_metrics: true
+  performance_log_dir: "./logs/windows_performance"
+  handle_windows_errors: true
+  retry_on_failure: true
+  max_retries: 3
+  fallback_to_simple_loader: true
+  optimization_level: "balanced"
+  windows_10_plus: true
+  disable_antivirus_interference: true
+  use_ssd_for_data: true
+  disable_windows_defender_realtime: false
+  enable_debug_logging: false
+  log_thread_activity: false
+  profile_data_loading: false

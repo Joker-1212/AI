@@ -362,7 +362,7 @@ class WaveletDomainCNNModel(CTEnhancementModel):
         original_ndim = x.ndim
         
         # 添加调试信息 - 打印到控制台
-        # print(f"[DEBUG] WaveletDomainCNNModel.forward() 输入形状: {original_shape}, 维度: {original_ndim}D, 设备: {x.device}")
+        # print(f"  WaveletDomainCNNModel.forward() 输入形状: {original_shape}, 维度: {original_ndim}D, 设备: {x.device}")
         
         # 日志记录输入信息
         # logger.debug(f"WaveletDomainCNNModel.forward() 输入形状: {original_shape}, 维度: {original_ndim}D")
@@ -375,13 +375,13 @@ class WaveletDomainCNNModel(CTEnhancementModel):
             depth_dim_present = False
             depth_size = 1
             # logger.debug("检测到4D输入，直接处理")
-            # print(f"[DEBUG] 4D输入，直接使用，x_2d形状: {x_2d.shape}")
+            # print(f"  4D输入，直接使用，x_2d形状: {x_2d.shape}")
             
         elif original_ndim == 5:
             # 5D输入：需要处理深度维度
             batch_size, channels, height, width, depth = original_shape
             # logger.debug(f"检测到5D输入，深度维度大小: {depth}")
-            # print(f"[DEBUG] 5D输入，深度={depth}")
+            # print(f"  5D输入，深度={depth}")
             
             if depth == 1:
                 # 深度维度为1：直接压缩
@@ -389,7 +389,7 @@ class WaveletDomainCNNModel(CTEnhancementModel):
                 depth_dim_present = True
                 depth_size = 1
                 # logger.debug("深度维度为1，已压缩")
-                # print(f"[DEBUG] 压缩后x_2d形状: {x_2d.shape}")
+                # print(f"  压缩后x_2d形状: {x_2d.shape}")
                 
             else:
                 # 深度维度>1：根据策略处理
@@ -460,26 +460,26 @@ class WaveletDomainCNNModel(CTEnhancementModel):
         
         # 小波域处理
         # logger.debug("进行小波域处理")
-        # print(f"[DEBUG] 调用小波处理器，输入形状: {x_2d.shape}")
+        # print(f"  调用小波处理器，输入形状: {x_2d.shape}")
         wavelet_enhanced = self.wavelet_processor(x_2d)
-        # print(f"[DEBUG] 小波处理器输出形状: {wavelet_enhanced.shape}")
+        # print(f"  小波处理器输出形状: {wavelet_enhanced.shape}")
         
         # 细化
         # logger.debug("进行细化处理")
-        # print(f"[DEBUG] 调用细化层，输入形状: {wavelet_enhanced.shape}")
+        # print(f"  调用细化层，输入形状: {wavelet_enhanced.shape}")
         refined = self.refine(wavelet_enhanced)
-        # # print(f"[DEBUG] 细化层输出形状: {refined.shape}")
+        # # print(f"  细化层输出形状: {refined.shape}")
         
         # 如果需要，恢复深度维度
         if depth_dim_present and depth_size == 1:
             refined = refined.unsqueeze(-1)
             # logger.debug(f"恢复深度维度，输出形状: {refined.shape}")
-            # print(f"[DEBUG] 恢复深度维度后输出形状: {refined.shape}")
+            # print(f"  恢复深度维度后输出形状: {refined.shape}")
         # else:
             # logger.debug(f"输出形状: {refined.shape}")
-            # print(f"[DEBUG] 输出形状: {refined.shape}")
+            # print(f"  输出形状: {refined.shape}")
         
-        # print(f"[DEBUG] 最终返回形状: {refined.shape}")
+        # print(f"  最终返回形状: {refined.shape}")
         return refined
 
 

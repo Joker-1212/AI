@@ -22,7 +22,33 @@ class DataConfig:
     val_split: float = 0.1
     test_split: float = 0.1
     normalize: bool = True
-    normalize_range: Tuple[float, float] = (-1000, 1000)  # CT值的HU范围
+    normalize_range: Tuple[float, float] = (-0.1, 0.1)  # 修复：改为适合实际数据范围的值
+    
+    def __post_init__(self):
+        """数据配置验证"""
+        # 验证归一化范围
+        if self.normalize_range[0] >= self.normalize_range[1]:
+            raise ValueError(f"归一化范围无效: {self.normalize_range}，最小值必须小于最大值")
+        
+        # 验证分割比例
+        total = self.train_split + self.val_split + self.test_split
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"分割比例总和应为1，当前为{total}")
+        
+        # 验证批次大小
+        if self.batch_size <= 0:
+            raise ValueError(f"批次大小必须为正数，当前为{self.batch_size}")
+        
+        # 验证图像尺寸
+        if len(self.image_size) != 3:
+            raise ValueError(f"图像尺寸应为3维(H,W,D)，当前为{self.image_size}")
+        
+        for dim in self.image_size:
+            if dim <= 0:
+                raise ValueError(f"图像尺寸必须为正数，当前为{self.image_size}")
+        
+        # 输出配置信息
+        print(f"数据配置验证通过: normalize_range={self.normalize_range}, batch_size={self.batch_size}")
 
 @dataclass
 class ModelConfig:

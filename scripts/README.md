@@ -7,6 +7,7 @@
 ```
 scripts/
 ├── main.py                 # 主入口点，支持子命令
+├── visuallization.py       # 诊断可视化脚本（须单独调用）
 ├── data/                   # 数据相关脚本
 │   └── create_sample_data.py
 ├── training/               # 训练脚本
@@ -69,6 +70,16 @@ python scripts/training/train_advanced.py \
 ```bash
 python scripts/data/create_sample_data.py --type 3d --num 10
 ```
+
+### 4. 诊断可视化
+
+针对某 Epoch 的模型和某对数据进行可视化诊断
+
+```bash
+python scripts/visuallization sample_id ckekpoint_id
+```
+
+可视化结果将保存至 `./data/diagnostics/checkpoint_id` 目录下
 
 ## 脚本详情
 
@@ -244,4 +255,4 @@ args = parser.parse_args()
 - [ ] 添加数据增强脚本
 - [ ] 添加模型评估脚本
 - [ ] 添加超参数优化脚本
-- [ ] 添加结果可视化脚本
+- [x] 添加结果可视化脚本
