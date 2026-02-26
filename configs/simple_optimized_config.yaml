@@ -1,0 +1,96 @@
+# 简单优化训练配置
+# 修复类型错误，确保所有值都是正确的类型
+
+data:
+  data_dir: "./data"
+  low_dose_dir: "qd"
+  full_dose_dir: "fd"
+  image_size: [512, 512, 1]
+  batch_size: 8
+  num_workers: 0
+  pin_memory: true
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  normalize: true
+  normalize_range: [-0.1, 0.1]
+  collect_statistics: false
+
+model:
+  model_name: "WaveletDomainCNN"
+  in_channels: 1
+  out_channels: 1
+  features: [32, 64, 128, 256]
+  dropout: 0.1
+  use_batch_norm: true
+  activation: "ReLU"
+
+training:
+  learning_rate: 0.0001
+  num_epochs: 200
+  optimizer: "AdamW"
+  weight_decay: 0.00001
+  
+  # 损失函数配置
+  loss_function: "MixedLoss"
+  loss_weights: [1.0, 0.3, 0.05]
+  use_multi_scale_loss: false
+  
+  # 学习率调度
+  scheduler: "StepLR"
+  patience: 15
+  min_lr: 0.000001
+  scheduler_factor: 0.5
+  scheduler_step_size: 30
+  scheduler_gamma: 0.5
+  
+  # 高级训练策略
+  warmup_epochs: 0
+  gradient_clip_value: 1.0
+  gradient_clip_norm: null
+  use_early_stopping: true
+  early_stopping_patience: 30
+  
+  # 混合精度训练
+  use_amp: true
+  
+  # 日志和监控
+  log_interval: 30
+  save_interval: 20
+  monitor_metrics: ["loss", "psnr"]
+  
+  # 路径配置
+  checkpoint_dir: "./models/simple_optimized_checkpoints"
+  log_dir: "./logs/simple_optimized_training"
+  device: "cuda"
+
+diagnostics:
+  enable_diagnostics: true
+  
+  # 指标计算配置
+  compute_rmse: false
+  compute_mae: false
+  compute_psnr: true
+  compute_ssim: true
+  compute_ms_ssim: false
+  compute_lpips: false
+  
+  # 可视化配置
+  visualize_samples: 2
+  save_visualizations: true
+  visualization_dir: "./diagnostics/visualizations"
+  dpi: 150
+  visualization_frequency: 20
+  
+  # 模型诊断配置
+  check_gradients: true
+  check_weights: true
+  check_activations: false
+  check_dead_relu: true
+  model_diagnosis_frequency: 20
+  
+  # 训练分析配置
+  analyze_overfitting: true
+  compute_loss_ratio: true
+  check_learning_rate: true
+  training_analysis_frequency: 20

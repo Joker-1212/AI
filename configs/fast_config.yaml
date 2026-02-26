@@ -30,17 +30,17 @@ training:
   learning_rate: 0.0001
   num_epochs: 200
   optimizer: "AdamW"
-  weight_decay: 1e-05
+  weight_decay: 0.00001
   
   # 损失函数配置 - 使用混合损失但简化权重
   loss_function: "MixedLoss"
   loss_weights: [1.0, 0.3, 0.05]  # 简化权重，减少计算
   use_multi_scale_loss: false  # 禁用多尺度损失以减少计算开销
-  
+
   # 学习率调度 - 使用简单调度
   scheduler: "StepLR"
   patience: 15
-  min_lr: 1e-06
+  min_lr: 0.000001
   scheduler_factor: 0.5
   scheduler_step_size: 30  # 减少调度频率
   scheduler_gamma: 0.5
@@ -81,21 +81,21 @@ diagnostics:
   visualize_samples: 2  # 从5减少到2
   save_visualizations: true
   visualization_dir: "./diagnostics/visualizations"
-  dpi: 100  # 降低DPI
-  visualization_frequency: 20  # 每20个epoch一次
+  dpi: 150  # 降低DPI
+  visualization_frequency: 10  # 每20个epoch一次
   
   # 模型诊断配置 - 优化频率
   check_gradients: true
   check_weights: true
   check_activations: false  # 禁用激活检查
   check_dead_relu: true
-  model_diagnosis_frequency: 20  # 每20个epoch一次（下限）
+  model_diagnosis_frequency: 10  # 每20个epoch一次（下限）
   
   # 训练分析配置
   analyze_overfitting: true
   compute_loss_ratio: true
   check_learning_rate: true
-  training_analysis_frequency: 20  # 每20个epoch一次
+  training_analysis_frequency: 10  # 每20个epoch一次
 
 # 性能优化备注
 # 预期改进：
