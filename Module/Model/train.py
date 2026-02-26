@@ -333,7 +333,7 @@ class Trainer:
             
             # 混合精度训练
             if self.use_amp and self.scaler is not None:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast("cuda"):
                     enhanced = self.model(low_dose)
                     loss = self.criterion(enhanced, full_dose)
                 
@@ -715,16 +715,16 @@ class Trainer:
                             visualization_target = full_dose
                             
                             # 打印第一个批次的详细信息
-                            print(f"  第一个批次详细信息:")
-                            print(f"  低剂量形状: {low_dose.shape}")
-                            print(f"  全剂量形状: {full_dose.shape}")
-                            print(f"  增强形状: {enhanced.shape}")
-                            print(f"  低剂量范围: [{low_dose.min():.4f}, {low_dose.max():.4f}]")
-                            print(f"  全剂量范围: [{full_dose.min():.4f}, {full_dose.max():.4f}]")
-                            print(f"  增强范围: [{enhanced.min():.4f}, {enhanced.max():.4f}]")
-                            print(f"  损失值: {loss_value:.6f}")
-                            print(f"  PSNR: {psnr:.4f}")
-                            print(f"  SSIM: {ssim:.4f}")
+                            # print(f"  第一个批次详细信息:")
+                            # print(f"  低剂量形状: {low_dose.shape}")
+                            # print(f"  全剂量形状: {full_dose.shape}")
+                            # print(f"  增强形状: {enhanced.shape}")
+                            # print(f"  低剂量范围: [{low_dose.min():.4f}, {low_dose.max():.4f}]")
+                            # print(f"  全剂量范围: [{full_dose.min():.4f}, {full_dose.max():.4f}]")
+                            # print(f"  增强范围: [{enhanced.min():.4f}, {enhanced.max():.4f}]")
+                            # print(f"  损失值: {loss_value:.6f}")
+                            # print(f"  PSNR: {psnr:.4f}")
+                            # print(f"  SSIM: {ssim:.4f}")
                             
                     except Exception as e:
                         print(f"[CRITICAL ERROR] 批次 {batch_idx} 处理发生致命异常: {type(e).__name__}: {str(e)}")

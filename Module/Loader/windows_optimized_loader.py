@@ -408,11 +408,11 @@ class MemoryMappedDataset(Dataset):
                         self.memmap_files.append(sample)
                 
                 # 进度报告
-                if (i + 1) % 10 == 0 or (i + 1) == len(self.original_dataset):
+                if (i + 1) % 100 == 0 or (i + 1) == len(self.original_dataset):
                     elapsed = time.time() - start_time
                     speed = (i + 1) / elapsed if elapsed > 0 else 0
-                    # logger.info(f"  已缓存 {i + 1}/{len(self.original_dataset)} 个样本 "
-                    #            f"({speed:.1f} 样本/秒)")
+                    logger.info(f"  已缓存 {i + 1}/{len(self.original_dataset)} 个样本 "
+                               f"({speed:.1f} 样本/秒)")
             
             except Exception as e:
                 logger.error(f"缓存样本 {i} 失败: {e}")
@@ -484,14 +484,14 @@ class WindowsOptimizedDataLoader:
                 if total_size_mb <= 100:  # 小于100MB
                     return OptimizationStrategy.PRELOAD
                 elif total_size_mb <= 1000:  # 小于1GB
-                    return OptimizationStrategy.THREADPOOL
+                    return OptimizationStrategy.MEMMAP
                 elif total_size_mb <= 10000:  # 小于10GB
                     return OptimizationStrategy.MEMMAP
                 else:
                     return OptimizationStrategy.HYBRID
             except:
                 # 如果无法估算，使用线程池
-                return OptimizationStrategy.THREADPOOL
+                return OptimizationStrategy.MEMMAP
         
         return strategy
     

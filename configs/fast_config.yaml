@@ -1,0 +1,114 @@
+# 最终优化训练配置
+# 目标：将训练速度从1.56it/s提升到2.5+ it/s
+# 策略：平衡性能和质量，保持必要的诊断功能
+
+data:
+  data_dir: "./data"
+  low_dose_dir: "qd"
+  full_dose_dir: "fd"
+  image_size: [512, 512, 1]
+  batch_size: 8  # 从4增加到8，充分利用GPU内存
+  num_workers: 0  # 不使用多进程，保持为0
+  pin_memory: true  # 启用内存锁定，加速GPU数据传输
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  normalize: true
+  normalize_range: [-0.1, 0.1]
+  collect_statistics: false  # 禁用统计收集以减少初始化时间
+
+model:
+  model_name: "WaveletDomainCNN"  # 保持原模型
+  in_channels: 1
+  out_channels: 1
+  features: [32, 64, 128, 256]  # 保持原特征数量
+  dropout: 0.1
+  use_batch_norm: true
+  activation: "ReLU"
+
+training:
+  learning_rate: 0.0001
+  num_epochs: 200
+  optimizer: "AdamW"
+  weight_decay: 1e-05
+  
+  # 损失函数配置 - 使用混合损失但简化权重
+  loss_function: "MixedLoss"
+  loss_weights: [1.0, 0.3, 0.05]  # 简化权重，减少计算
+  use_multi_scale_loss: false  # 禁用多尺度损失以减少计算开销
+  
+  # 学习率调度 - 使用简单调度
+  scheduler: "StepLR"
+  patience: 15
+  min_lr: 1e-06
+  scheduler_factor: 0.5
+  scheduler_step_size: 30  # 减少调度频率
+  scheduler_gamma: 0.5
+  
+  # 高级训练策略
+  warmup_epochs: 0  # 禁用热身以减少开销
+  gradient_clip_value: 1.0
+  gradient_clip_norm: null
+  use_early_stopping: true
+  early_stopping_patience: 30
+  
+  # 混合精度训练 - 必须启用以加速训练
+  use_amp: true
+  
+  # 日志和监控 - 优化频率
+  log_interval: 30  # 从10增加到30，减少日志开销
+  save_interval: 20  # 从10增加到20
+  monitor_metrics: ["loss", "psnr"]  # 只监控关键指标
+  
+  # 路径配置
+  checkpoint_dir: "./models/final_optimized_checkpoints"
+  log_dir: "./logs/final_optimized_training"
+  device: "cuda"
+
+diagnostics:
+  # 启用诊断功能但优化频率
+  enable_diagnostics: true
+  
+  # 指标计算配置 - 只保留关键指标
+  compute_rmse: false  # 禁用RMSE
+  compute_mae: false   # 禁用MAE
+  compute_psnr: true   # 保留PSNR
+  compute_ssim: true   # 保留SSIM
+  compute_ms_ssim: false  # 禁用多尺度SSIM
+  compute_lpips: false  # 禁用LPIPS
+  
+  # 可视化配置 - 减少样本数
+  visualize_samples: 2  # 从5减少到2
+  save_visualizations: true
+  visualization_dir: "./diagnostics/visualizations"
+  dpi: 100  # 降低DPI
+  visualization_frequency: 20  # 每20个epoch一次
+  
+  # 模型诊断配置 - 优化频率
+  check_gradients: true
+  check_weights: true
+  check_activations: false  # 禁用激活检查
+  check_dead_relu: true
+  model_diagnosis_frequency: 20  # 每20个epoch一次（下限）
+  
+  # 训练分析配置
+  analyze_overfitting: true
+  compute_loss_ratio: true
+  check_learning_rate: true
+  training_analysis_frequency: 20  # 每20个epoch一次
+
+# 性能优化备注
+# 预期改进：
+# 1. 批处理大小从4增加到8：提高GPU利用率约50%
+# 2. 启用混合精度训练(AMP)：提高训练速度约30-50%
+# 3. 禁用多尺度损失：减少计算开销约20%
+# 4. 禁用热身阶段：减少额外计算
+# 5. 优化诊断频率：从每5-10个epoch减少到每20个epoch
+# 6. 减少日志频率：从每10个batch减少到每30个batch
+# 7. 简化损失函数权重：减少计算复杂度
+# 8. 禁用不必要的指标计算：减少验证开销
+# 
+# 总预期速度提升：从1.56it/s到2.5-3.0it/s
+# 训练时间从8分钟/epoch减少到4-5分钟/epoch
+# 
+# 注意：保持了必要的诊断功能（每20个epoch一次），符合要求

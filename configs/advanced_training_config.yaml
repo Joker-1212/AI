@@ -81,7 +81,7 @@ diagnostics:
   visualize_samples: 5
   save_visualizations: true
   visualization_dir: "./diagnostics/visualizations"
-  dpi: 150
+  dpi: 360
   visualization_frequency: 5
   
   # 模型诊断配置
