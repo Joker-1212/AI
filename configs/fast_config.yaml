@@ -65,6 +65,8 @@ training:
   checkpoint_dir: "./models/final_optimized_checkpoints"
   log_dir: "./logs/final_optimized_training"
   device: "cuda"
+  # 可选：从指定检查点恢复训练
+  # resume_checkpoint: "./models/final_optimized_checkpoints/checkpoint_epoch_20.pth"
 
 diagnostics:
   # 启用诊断功能但优化频率

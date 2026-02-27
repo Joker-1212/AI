@@ -140,6 +140,57 @@ def add_training_args(parser: argparse.ArgumentParser) -> None:
         type=str,
         help="Path to checkpoint to resume training from"
     )
+    
+    # Advanced training parameters
+    train_group.add_argument(
+        "--weight-decay",
+        type=float,
+        help="Weight decay for optimizer"
+    )
+    
+    train_group.add_argument(
+        "--gradient-clip",
+        type=float,
+        help="Gradient clipping value"
+    )
+    
+    train_group.add_argument(
+        "--warmup-epochs",
+        type=int,
+        help="Number of learning rate warmup epochs"
+    )
+    
+    train_group.add_argument(
+        "--patience",
+        type=int,
+        help="Early stopping patience"
+    )
+    
+    # Loss function parameters
+    train_group.add_argument(
+        "--loss-weights",
+        type=str,
+        help="Mixed loss weights (comma-separated, e.g., '1.0,0.5,0.1')"
+    )
+    
+    train_group.add_argument(
+        "--multi-scale",
+        action="store_true",
+        help="Use multi-scale loss"
+    )
+    
+    train_group.add_argument(
+        "--multi-scale-weights",
+        type=str,
+        help="Multi-scale loss weights (comma-separated, e.g., '1.0,0.5,0.25')"
+    )
+    
+    # Experiment management
+    train_group.add_argument(
+        "--experiment",
+        type=str,
+        help="Experiment name (for custom checkpoint and log directories)"
+    )
 
 
 def add_model_args(parser: argparse.ArgumentParser) -> None:

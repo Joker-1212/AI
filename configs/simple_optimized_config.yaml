@@ -64,6 +64,8 @@ training:
   checkpoint_dir: "./models/simple_optimized_checkpoints"
   log_dir: "./logs/simple_optimized_training"
   device: "cuda"
+  # 可选：从指定检查点恢复训练
+  # resume_checkpoint: "./models/simple_optimized_checkpoints/checkpoint_epoch_20.pth"
 
 diagnostics:
   enable_diagnostics: true

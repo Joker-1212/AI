@@ -81,6 +81,27 @@ python scripts/main.py train
 
 # 使用自定义配置训练
 python scripts/main.py train --config configs/advanced_training_config.yaml
+
+# 从检查点恢复训练
+python scripts/main.py train --resume ./checkpoints/checkpoint_epoch_20.pth
+
+# 使用高级训练参数
+python scripts/main.py train \
+  --weight-decay 0.0001 \
+  --gradient-clip 1.0 \
+  --warmup-epochs 2 \
+  --patience 10 \
+  --loss-weights "1.0,0.5,0.1" \
+  --multi-scale \
+  --multi-scale-weights "1.0,0.5,0.25" \
+  --experiment "my_experiment"
+
+# 结合配置文件和命令行参数（命令行优先级更高）
+python scripts/main.py train \
+  --config configs/advanced_training_config.yaml \
+  --resume ./custom_checkpoint.pth \
+  --epochs 100 \
+  --learning-rate 0.0005
 ```
 
 ### 3. 增强图像
@@ -196,10 +217,18 @@ python -m Module.Tools.diagnostics comprehensive \
 ### 3. 训练配置 (`TrainingConfig`)
 - `learning_rate`: 初始学习率
 - `num_epochs`: 总训练轮数
-- `loss_function`: 损失函数（L1Loss、MSELoss、SSIMLoss、MixedLoss）
+- `loss_function`: 损失函数（L1Loss、MSELoss、SSIMLoss、MixedLoss、MultiScaleLoss）
 - `optimizer`: 优化器（Adam、AdamW、SGD）
-- `scheduler`: 学习率调度器（ReduceLROnPlateau、Cosine、Step）
+- `scheduler`: 学习率调度器（ReduceLROnPlateau、Cosine、Step、MultiStep、CosineWarmRestarts）
 - `use_amp`: 启用自动混合精度训练
+- `weight_decay`: 权重衰减系数
+- `patience`: 早停耐心值
+- `warmup_epochs`: 学习率热身轮数
+- `gradient_clip_value`: 梯度裁剪值
+- `loss_weights`: 混合损失权重（用于MixedLoss）
+- `use_multi_scale_loss`: 是否使用多尺度损失
+- `multi_scale_weights`: 多尺度损失权重
+- `resume_checkpoint`: 从检查点恢复训练的路径（支持命令行和配置文件）
 
 ### 4. 诊断配置 (`DiagnosticsConfig`)
 - `enable_diagnostics`: 启用诊断功能
@@ -230,6 +259,15 @@ training:
   loss_function: "MixedLoss"
   optimizer: "AdamW"
   scheduler: "CosineWarmRestarts"
+  weight_decay: 1e-5
+  patience: 15
+  warmup_epochs: 0
+  gradient_clip_value: 1.0
+  loss_weights: [1.0, 0.5, 0.1]
+  use_multi_scale_loss: true
+  multi_scale_weights: [1.0, 0.5, 0.25]
+  # 可选：从检查点恢复训练
+  # resume_checkpoint: "./checkpoints/checkpoint_epoch_20.pth"
 ```
 
 ## 使用示例
@@ -250,6 +288,22 @@ config.model.model_name = "AttentionUNet"
 # 训练模型
 trainer = Trainer(config)
 trainer.train()
+
+# 从检查点恢复训练
+trainer_resume = Trainer(config, checkpoint_path="./checkpoints/checkpoint_epoch_20.pth")
+trainer_resume.train()
+
+# 使用高级训练参数
+config.training.weight_decay = 0.0001
+config.training.patience = 10
+setattr(config.training, 'gradient_clip_value', 1.0)
+setattr(config.training, 'warmup_epochs', 2)
+config.training.loss_weights = (1.0, 0.5, 0.1)
+config.training.use_multi_scale_loss = True
+config.training.multi_scale_weights = (1.0, 0.5, 0.25)
+
+trainer_advanced = Trainer(config)
+trainer_advanced.train()
 
 # 增强图像
 enhancer = CTEnhancer("models/checkpoints/best_model.pth")
