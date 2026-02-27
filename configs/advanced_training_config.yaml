@@ -6,9 +6,9 @@ data:
   low_dose_dir: "qd"
   full_dose_dir: "fd"
   image_size: [512, 512, 1]
-  batch_size: 4
+  batch_size: 8
   num_workers: 0
-  pin_memory: false
+  pin_memory: true
   train_split: 0.8
   val_split: 0.1
   test_split: 0.1
@@ -28,7 +28,7 @@ training:
   learning_rate: 0.0001
   num_epochs: 200
   optimizer: "AdamW"
-  weight_decay: 1e-05
+  weight_decay: 0.00001
   
   # 损失函数配置
   loss_function: "MixedLoss"
@@ -39,31 +39,33 @@ training:
   # 学习率调度
   scheduler: "CosineWarmRestarts"
   patience: 15
-  min_lr: 1e-06
+  min_lr: 0.000001
   scheduler_factor: 0.5
   scheduler_step_size: 20
   scheduler_gamma: 0.5
   scheduler_milestones: [50, 100, 150]
   
   # 高级训练策略
-  warmup_epochs: 5
+  warmup_epochs: 0
   gradient_clip_value: 1.0
   gradient_clip_norm: null
   use_early_stopping: true
   early_stopping_patience: 30
   
   # 混合精度训练
-  use_amp: false
+  use_amp: true
   
   # 日志和监控
-  log_interval: 10
-  save_interval: 10
+  log_interval: 30
+  save_interval: 20
   monitor_metrics: ["loss", "psnr", "ssim"]
   
   # 路径配置
   checkpoint_dir: "./models/advanced_checkpoints"
   log_dir: "./logs/advanced_training"
   device: "cuda"
+  # 可选：从指定检查点恢复训练
+  # resume_checkpoint: "./models/advanced_checkpoints/checkpoint_epoch_20.pth"
 
 diagnostics:
   # 启用诊断功能
@@ -74,15 +76,15 @@ diagnostics:
   compute_mae: true
   compute_psnr: true
   compute_ssim: true
-  compute_ms_ssim: false
-  compute_lpips: false
+  compute_ms_ssim: true
+  compute_lpips: true
   
   # 可视化配置
   visualize_samples: 5
   save_visualizations: true
   visualization_dir: "./diagnostics/visualizations"
-  dpi: 360
-  visualization_frequency: 5
+  dpi: 150
+  visualization_frequency: 10
   
   # 模型诊断配置
   check_gradients: true
@@ -95,42 +97,42 @@ diagnostics:
   analyze_overfitting: true
   compute_loss_ratio: true
   check_learning_rate: true
-  training_analysis_frequency: 5
+  training_analysis_frequency: 10
   
   # 报告配置
-  generate_html_report: true
-  generate_pdf_report: false
-  report_dir: "./diagnostics/reports"
+  # generate_html_report: true
+  # generate_pdf_report: true
+  # report_dir: "./diagnostics/reports"
 
-windows_optimization:
-  enable_windows_optimization: true
-  platform_detection: "auto"
-  data_loader_type: "windows_optimized"
-  use_memory_mapped_files: true
-  memory_map_cache_size: 1024
-  preload_data_to_ram: false
-  preload_batch_count: 100
-  num_workers: 0
-  use_thread_pool: true
-  thread_pool_size: 4
-  thread_priority: "normal"
-  pin_memory: false
-  memory_allocation_strategy: "balanced"
-  max_memory_usage_mb: 4096
-  garbage_collection_frequency: 100
-  enable_performance_monitoring: true
-  monitor_interval_seconds: 30
-  log_performance_metrics: true
-  performance_log_dir: "./logs/windows_performance"
-  handle_windows_errors: true
-  retry_on_failure: true
-  max_retries: 3
-  fallback_to_simple_loader: true
-  optimization_level: "balanced"
-  windows_10_plus: true
-  disable_antivirus_interference: true
-  use_ssd_for_data: true
-  disable_windows_defender_realtime: false
-  enable_debug_logging: false
-  log_thread_activity: false
-  profile_data_loading: false
+# windows_optimization:
+#   enable_windows_optimization: true
+#   platform_detection: "auto"
+#   data_loader_type: "windows_optimized"
+#   use_memory_mapped_files: true
+#   memory_map_cache_size: 1024
+#   preload_data_to_ram: false
+#   preload_batch_count: 100
+#   num_workers: 0
+#   use_thread_pool: true
+#   thread_pool_size: 4
+#   thread_priority: "normal"
+#   pin_memory: false
+#   memory_allocation_strategy: "balanced"
+#   # max_memory_usage_mb: 4096
+#   garbage_collection_frequency: 100
+#   enable_performance_monitoring: true
+#   monitor_interval_seconds: 30
+#   log_performance_metrics: true
+#   performance_log_dir: "./logs/windows_performance"
+#   handle_windows_errors: true
+#   retry_on_failure: true
+#   max_retries: 3
+#   fallback_to_simple_loader: true
+#   optimization_level: "balanced"
+#   windows_10_plus: true
+#   disable_antivirus_interference: true
+#   use_ssd_for_data: true
+#   disable_windows_defender_realtime: false
+#   enable_debug_logging: false
+#   log_thread_activity: false
+#   profile_data_loading: false

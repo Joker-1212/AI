@@ -125,7 +125,28 @@ def train_with_advanced_config(config: Config, args):
     
     # 创建训练器
     print("\n初始化训练器...")
-    trainer = Trainer(config)
+    
+    # 检查是否从检查点恢复
+    checkpoint_path = None
+    
+    # 优先级1: 命令行参数 --resume
+    if hasattr(args, 'resume') and args.resume:
+        checkpoint_path = args.resume
+    
+    # 优先级2: 配置文件中的 resume_checkpoint
+    if not checkpoint_path and hasattr(config.training, 'resume_checkpoint'):
+        checkpoint_path = config.training.resume_checkpoint
+    
+    # 验证检查点路径
+    if checkpoint_path:
+        if not os.path.exists(checkpoint_path):
+            print(f"警告: 检查点文件不存在: {checkpoint_path}")
+            print("将从头开始训练...")
+            checkpoint_path = None
+        else:
+            print(f"从检查点恢复: {checkpoint_path}")
+    
+    trainer = Trainer(config, checkpoint_path=checkpoint_path)
     
     # 训练
     print("\n开始训练...")

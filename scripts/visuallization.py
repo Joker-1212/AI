@@ -77,7 +77,7 @@ def main():
         print(f"Error loading data: {e}")
         return
     
-    enhancer = CTEnhancer(checkpoint_path=f"./models/advanced_checkpoints/checkpoint_epoch_{checkpoint_id}.pth")
+    enhancer = CTEnhancer(checkpoint_path=f"./models/checkpoints/checkpoint_{checkpoint_id}.pth")
     input_path = f"./data/qd/{sample_id}.npy"
     output_path = f"./data/rst/{checkpoint_id}/{sample_id}.npy"
     os.makedirs(f"./data/rst/{checkpoint_id}", exist_ok=True)

@@ -37,12 +37,13 @@ training:
   use_multi_scale_loss: false
   
   # 学习率调度
-  scheduler: "StepLR"
+  scheduler: "CosineWarmRestarts"
   patience: 15
-  min_lr: 0.000001
+  min_lr: 1e-06
   scheduler_factor: 0.5
-  scheduler_step_size: 30
+  scheduler_step_size: 20
   scheduler_gamma: 0.5
+  scheduler_milestones: [50, 100, 150]
   
   # 高级训练策略
   warmup_epochs: 0

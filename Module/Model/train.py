@@ -28,7 +28,7 @@ from ..Tools.amp_optimizer import AMPOptimizer, autocast_context, get_recommende
 class Trainer:
     """训练器类"""
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, checkpoint_path: Optional[str] = None):
         self.config = config
         self.device = torch.device(config.training.device if torch.cuda.is_available() else "cpu")
         
@@ -49,6 +49,10 @@ class Trainer:
         self.current_epoch = 0
         self.best_val_loss = float('inf')
         self.writer = SummaryWriter(log_dir=config.training.log_dir)
+        
+        # 从检查点恢复（如果提供了检查点路径）
+        if checkpoint_path and os.path.exists(checkpoint_path):
+            self._load_checkpoint(checkpoint_path)
         
         # 早停机制
         self.early_stopping_counter = 0
@@ -142,6 +146,63 @@ class Trainer:
         print(f"损失函数: {config.training.loss_function}")
         if self.config.training.use_multi_scale_loss:
             print(f"使用多尺度损失，权重: {self.config.training.multi_scale_weights}")
+    
+    def _load_checkpoint(self, checkpoint_path: str):
+        """从检查点加载模型、优化器、调度器和训练状态"""
+        print(f"从检查点恢复: {checkpoint_path}")
+        
+        # 加载检查点文件
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"检查点文件不存在: {checkpoint_path}")
+        
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        
+        # 加载模型状态
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # 加载优化器状态
+        if self.optimizer is not None and 'optimizer_state_dict' in checkpoint:
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # 加载调度器状态
+        if self.scheduler is not None and 'scheduler_state_dict' in checkpoint:
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        
+        # 更新训练状态
+        epoch = checkpoint.get('epoch', 0)
+        val_loss = checkpoint.get('val_loss', float('inf'))
+        
+        self.current_epoch = epoch
+        self.best_val_loss = val_loss
+        
+        # 尝试加载训练历史记录
+        if 'train_losses' in checkpoint:
+            self.train_losses = checkpoint['train_losses']
+            print(f"加载了 {len(self.train_losses)} 个训练损失记录")
+        
+        if 'val_losses' in checkpoint:
+            self.val_losses = checkpoint['val_losses']
+            print(f"加载了 {len(self.val_losses)} 个验证损失记录")
+        
+        if 'val_psnrs' in checkpoint:
+            self.val_psnrs = checkpoint['val_psnrs']
+            print(f"加载了 {len(self.val_psnrs)} 个PSNR记录")
+        
+        if 'val_ssims' in checkpoint:
+            self.val_ssims = checkpoint['val_ssims']
+            print(f"加载了 {len(self.val_ssims)} 个SSIM记录")
+        
+        # 更新早停计数器（如果检查点中有）
+        if 'early_stopping_counter' in checkpoint:
+            self.early_stopping_counter = checkpoint['early_stopping_counter']
+            print(f"早停计数器: {self.early_stopping_counter}")
+        
+        # 加载学习率记录
+        if 'learning_rates' in checkpoint:
+            self.learning_rates = checkpoint['learning_rates']
+            print(f"加载了 {len(self.learning_rates)} 个学习率记录")
+        
+        print(f"成功从 epoch {epoch} 恢复训练，验证损失: {val_loss:.4f}")
     
     def _create_optimizer(self) -> torch.optim.Optimizer:
         """创建优化器"""
@@ -1169,35 +1230,35 @@ class Trainer:
             fig, axes = plt.subplots(2, 2, figsize=(12, 8))
             
             # 损失曲线
-            axes[0, 0].plot(df['epoch'], df['train_loss'], label='训练损失')
-            axes[0, 0].plot(df['epoch'], df['val_loss'], label='验证损失')
+            axes[0, 0].plot(df['epoch'], df['train_loss'], label='Training Loss')
+            axes[0, 0].plot(df['epoch'], df['val_loss'], label='Validation Loss')
             axes[0, 0].set_xlabel('Epoch')
-            axes[0, 0].set_ylabel('损失')
-            axes[0, 0].set_title('训练和验证损失')
+            axes[0, 0].set_ylabel('Loss')
+            axes[0, 0].set_title('Training and Validation Loss')
             axes[0, 0].legend()
             axes[0, 0].grid(True, alpha=0.3)
             
             # PSNR曲线
-            axes[0, 1].plot(df['epoch'], df['val_psnr'], label='验证PSNR', color='green')
+            axes[0, 1].plot(df['epoch'], df['val_psnr'], label='Validation PSNR', color='green')
             axes[0, 1].set_xlabel('Epoch')
             axes[0, 1].set_ylabel('PSNR (dB)')
-            axes[0, 1].set_title('验证PSNR')
+            axes[0, 1].set_title('Validation PSNR')
             axes[0, 1].legend()
             axes[0, 1].grid(True, alpha=0.3)
             
             # SSIM曲线
-            axes[1, 0].plot(df['epoch'], df['val_ssim'], label='验证SSIM', color='orange')
+            axes[1, 0].plot(df['epoch'], df['val_ssim'], label='Validation SSIM', color='orange')
             axes[1, 0].set_xlabel('Epoch')
             axes[1, 0].set_ylabel('SSIM')
-            axes[1, 0].set_title('验证SSIM')
+            axes[1, 0].set_title('Validation SSIM')
             axes[1, 0].legend()
             axes[1, 0].grid(True, alpha=0.3)
             
             # 学习率曲线
-            axes[1, 1].plot(df['epoch'], df['learning_rate'], label='学习率', color='red')
+            axes[1, 1].plot(df['epoch'], df['learning_rate'], label='Learning Rate', color='red')
             axes[1, 1].set_xlabel('Epoch')
-            axes[1, 1].set_ylabel('学习率')
-            axes[1, 1].set_title('学习率变化')
+            axes[1, 1].set_ylabel('Learning Rate')
+            axes[1, 1].set_title('Learning Rate Schedule')
             axes[1, 1].legend()
             axes[1, 1].grid(True, alpha=0.3)
             
