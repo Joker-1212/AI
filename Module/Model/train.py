@@ -237,11 +237,12 @@ class Trainer:
         step_size = getattr(self.config.training, 'scheduler_step_size', 20)
         gamma = getattr(self.config.training, 'scheduler_gamma', 0.5)
         milestones = getattr(self.config.training, 'scheduler_milestones', (30, 60, 90))
+        mode = getattr(self.config.training, 'mode', 'min')
         
         if scheduler_name == "reducelronplateau":
             return optim.lr_scheduler.ReduceLROnPlateau(
                 self.optimizer,
-                mode='min',
+                mode=mode,
                 factor=factor,
                 patience=self.config.training.patience // 2,
                 min_lr=self.config.training.min_lr
@@ -259,20 +260,31 @@ class Trainer:
                 T_mult=2,
                 eta_min=self.config.training.min_lr
             )
-        elif scheduler_name == "step":
+        elif scheduler_name == "step" or scheduler_name == "steplr":
             return optim.lr_scheduler.StepLR(
                 self.optimizer,
                 step_size=step_size,
                 gamma=gamma
             )
-        elif scheduler_name == "multistep":
+        elif scheduler_name == "multistep" or scheduler_name == "multisteplr":
             return optim.lr_scheduler.MultiStepLR(
                 self.optimizer,
                 milestones=milestones,
                 gamma=gamma
             )
-        else:
-            return None
+        elif scheduler_name == "exponential" or scheduler_name == "exponentiallr":
+            return optim.lr_scheduler.ExponentialLR(
+                self.optimizer,
+                gamma=gamma
+            )
+        elif scheduler_name == "cyclic" or scheduler_name == "cycliclr":
+            return optim.lr_scheduler.CyclicLR(
+                self.optimizer,
+                base_lr=self.config.training.learning_rate / 10,
+                max_lr=self.config.training.learning_rate,
+                step_size_up=step_size * len(self.train_loader),
+                mode='triangular2'
+            )
     
     def _create_warmup_scheduler(self):
         """创建学习率热身调度器"""

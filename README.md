@@ -270,6 +270,181 @@ training:
   # resume_checkpoint: "./checkpoints/checkpoint_epoch_20.pth"
 ```
 
+## 学习率调度器详细说明
+
+学习率调度器是深度学习训练中的关键组件，用于在训练过程中动态调整学习率，以改善模型收敛性和性能。PyTorch提供了多种学习率调度器，本项目支持其中主要的几种。
+
+### 1. 本项目支持的调度器
+
+#### 1.1 ReduceLROnPlateau（高原衰减调度器）
+**调度方式**：当验证指标停止改善时降低学习率
+**主要参数**：
+- `patience`：等待改善的epoch数（默认15）
+- `factor`：衰减因子（默认0.5）
+- `min_lr`：最小学习率（默认1e-6）
+**适用场景**：验证损失或指标平台期时自动调整学习率
+**配置示例**：
+```yaml
+scheduler: "ReduceLROnPlateau"
+patience: 15
+scheduler_factor: 0.5
+min_lr: 1e-6
+```
+
+#### 1.2 CosineAnnealingLR（余弦退火调度器）
+**调度方式**：使用余弦函数在指定周期内将学习率从初始值衰减到最小值
+**主要参数**：
+- `T_max`：余弦周期的半周期长度（自动计算为`num_epochs - warmup_epochs`）
+- `eta_min`：最小学习率（默认1e-6）
+**适用场景**：需要平滑衰减的学习率策略
+**配置示例**：
+```yaml
+scheduler: "Cosine"
+min_lr: 1e-6
+```
+
+#### 1.3 CosineAnnealingWarmRestarts（余弦退火热重启调度器）
+**调度方式**：余弦退火配合周期性热重启，每次重启后周期长度增加
+**主要参数**：
+- `T_0`：第一次重启的周期长度（默认10）
+- `T_mult`：周期长度倍增因子（默认2）
+- `eta_min`：最小学习率（默认1e-6）
+**适用场景**：需要周期性探索不同学习率区域的复杂优化问题
+**配置示例**：
+```yaml
+scheduler: "CosineWarmRestarts"
+min_lr: 1e-6
+```
+
+#### 1.4 StepLR（步长调度器）
+**调度方式**：每隔固定步数将学习率乘以衰减因子
+**主要参数**：
+- `step_size`：学习率衰减的步长（默认30）
+- `gamma`：衰减因子（默认0.5）
+**适用场景**：简单的周期性学习率衰减
+**配置示例**：
+```yaml
+scheduler: "StepLR"
+scheduler_step_size: 30
+scheduler_gamma: 0.5
+```
+
+#### 1.5 MultiStepLR（多步长调度器）
+**调度方式**：在指定的里程碑处将学习率乘以衰减因子
+**主要参数**：
+- `milestones`：学习率衰减的里程碑列表（默认[50, 100, 150]）
+- `gamma`：衰减因子（默认0.5）
+**适用场景**：训练过程中有明确的关键阶段需要调整学习率
+**配置示例**：
+```yaml
+scheduler: "MultiStepLR"
+scheduler_milestones: [50, 100, 150]
+scheduler_gamma: 0.5
+```
+
+### 2. 热身调度器（Warmup）
+
+项目支持学习率热身功能，在训练初期逐步提高学习率：
+- **配置参数**：`warmup_epochs`
+- **热身公式**：`lr = initial_lr * (epoch + 1) / warmup_epochs`
+- **配置示例**：
+```yaml
+warmup_epochs: 5
+```
+
+### 3. 其他PyTorch调度器
+
+PyTorch还支持以下调度器，如需使用可扩展项目代码：
+
+#### 3.1 ExponentialLR（指数调度器）
+- **调度方式**：每个epoch将学习率乘以固定的衰减因子
+- **公式**：`lr = lr * gamma^epoch`
+- **适用场景**：需要平滑、连续的学习率衰减
+
+#### 3.2 CyclicLR（循环学习率调度器）
+- **调度方式**：在基础学习率和最大学习率之间循环变化
+- **策略模式**：triangular（线性）、triangular2（振幅减半）、exp_range（指数）
+- **适用场景**：需要探索不同学习率范围的训练
+
+#### 3.3 OneCycleLR（单周期调度器）
+- **调度方式**：单个大周期内学习率从初始值上升到最大值再下降
+- **适用场景**：快速收敛的训练策略，常用于计算机视觉任务
+
+#### 3.4 LinearLR（线性调度器）
+- **调度方式**：在指定迭代次数内线性调整学习率
+- **适用场景**：学习率热身或线性衰减
+
+#### 3.5 PolynomialLR（多项式调度器）
+- **调度方式**：使用多项式函数衰减学习率
+- **公式**：`lr = initial_lr * (1 - iter/total_iters)^power`
+- **适用场景**：需要自定义衰减曲线的训练
+
+### 4. 组合调度器
+
+#### 4.1 SequentialLR（顺序调度器）
+- **调度方式**：按顺序应用多个调度器，在指定里程碑切换
+- **适用场景**：复杂的多阶段训练策略
+
+#### 4.2 ChainedScheduler（链式调度器）
+- **调度方式**：链式应用多个调度器，每个调度器在前一个的基础上调整
+
+#### 4.3 LambdaLR（Lambda调度器）
+- **调度方式**：使用自定义lambda函数调整学习率
+- **适用场景**：完全自定义的学习率调整策略
+
+### 5. 选择指南
+
+#### 5.1 根据任务类型选择
+- **图像分类/检测**：CosineAnnealingLR, OneCycleLR
+- **自然语言处理**：ReduceLROnPlateau, StepLR
+- **生成模型**：CosineAnnealingWarmRestarts, CyclicLR
+- **医学图像**：ReduceLROnPlateau, CosineAnnealingLR
+
+#### 5.2 根据训练阶段选择
+- **初始训练**：使用热身 + CosineAnnealingLR
+- **微调**：使用ReduceLROnPlateau
+- **探索性训练**：使用CyclicLR或CosineAnnealingWarmRestarts
+
+#### 5.3 参数调优建议
+1. **学习率范围**：初始学习率通常在1e-4到1e-3之间
+2. **衰减因子**：gamma通常为0.1-0.5
+3. **耐心值**：ReduceLROnPlateau的patience为总epoch数的5-10%
+4. **最小学习率**：min_lr设为初始学习率的1/100到1/1000
+
+### 6. 最佳实践
+
+#### 6.1 监控学习率
+- 使用TensorBoard监控学习率变化：`tensorboard --logdir logs/`
+- 记录每个epoch的学习率值
+- 分析学习率与损失曲线的相关性
+
+#### 6.2 调试技巧
+1. **学习率过高**：损失NaN或爆炸 → 降低初始学习率
+2. **学习率过低**：收敛缓慢 → 提高初始学习率或使用热身
+3. **平台期**：验证损失停滞 → 使用ReduceLROnPlateau
+4. **周期性波动**：使用余弦退火平滑变化
+
+#### 6.3 配置示例组合
+```yaml
+# 示例1：热身+余弦退火
+warmup_epochs: 5
+scheduler: "Cosine"
+min_lr: 1e-6
+
+# 示例2：高原衰减+早停
+scheduler: "ReduceLROnPlateau"
+patience: 15
+scheduler_factor: 0.5
+min_lr: 1e-6
+use_early_stopping: true
+early_stopping_patience: 30
+
+# 示例3：多阶段调度
+scheduler: "MultiStepLR"
+scheduler_milestones: [50, 100, 150]
+scheduler_gamma: 0.5
+```
+
 ## 使用示例
 
 ### Python API 使用
