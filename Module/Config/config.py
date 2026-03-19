@@ -60,6 +60,7 @@ class ModelConfig:
     dropout: float = 0.1
     use_batch_norm: bool = True
     activation: str = "ReLU"
+    wavelet_type: str = "contourlet"  # 小波类型: 'contourlet' 或 'dwt'
 
 @dataclass
 class TrainingConfig:
@@ -72,7 +73,7 @@ class TrainingConfig:
     # 损失函数配置
     loss_function: str = field(default_factory=lambda: os.getenv("CT_LOSS_FUNCTION", "MixedLoss"))
     loss_weights: Tuple[float, ...] = (1.0, 0.5, 0.1)  # 混合损失权重 [L1, SSIM, Perceptual]
-    use_multi_scale_loss: bool = True  # 是否使用多尺度损失
+    use_multi_scale_loss: bool = False  # 是否使用多尺度损失（轮廓波自带多尺度，默认关闭）
     multi_scale_weights: Tuple[float, ...] = (1.0, 0.5, 0.25)  # 多尺度损失权重
     
     # 学习率调度
@@ -511,6 +512,7 @@ class Config:
                 "dropout": self.model.dropout,
                 "use_batch_norm": self.model.use_batch_norm,
                 "activation": self.model.activation,
+                "wavelet_type": self.model.wavelet_type,
             },
             "training": {
                 "learning_rate": self.training.learning_rate,

@@ -25,6 +25,7 @@ model:
   dropout: 0.1
   use_batch_norm: true
   activation: "ReLU"
+  wavelet_type: "contourlet"
 
 training:
   learning_rate: 0.0001
@@ -35,7 +36,7 @@ training:
   # 损失函数配置 - 使用混合损失但简化权重
   loss_function: "MixedLoss"
   loss_weights: [1.0, 0.3, 0.05]  # 简化权重，减少计算
-  use_multi_scale_loss: true
+  use_multi_scale_loss: false
   multi_scale_weights: [1.0, 0.5, 0.25]  
 
   scheduler: "StepLR"

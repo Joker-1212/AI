@@ -18,7 +18,7 @@ from .Model.train import Trainer
 from .Inference.inference import CTEnhancer
 from .Tools.utils import save_checkpoint, load_checkpoint, calculate_metrics, visualize_results
 from .Tools.diagnostics import ModelDiagnostics, DiagnosticsCLI
-from .Tools.wavelet_transform import DWT2d, LearnableDirectionalWavelet, WaveletDomainProcessing
+from .Tools.wavelet_transform import DWT2d, FixedDirectionalFilterBank, ContourletTransform, WaveletDomainProcessing
 
 # Define public API
 __all__ = [
@@ -62,7 +62,8 @@ __all__ = [
     "ModelDiagnostics",
     "DiagnosticsCLI",
     "DWT2d",
-    "LearnableDirectionalWavelet",
+    "FixedDirectionalFilterBank",
+    "ContourletTransform",
     "WaveletDomainProcessing",
     
     # Metadata

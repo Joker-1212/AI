@@ -10,7 +10,7 @@ from monai.networks.blocks import Convolution, ResidualUnit
 from typing import Tuple, Optional, Union
 
 from ..Config.config import ModelConfig
-from ..Tools.wavelet_transform import WaveletDomainProcessing, LearnableDirectionalWavelet, DWT2d
+from ..Tools.wavelet_transform import WaveletDomainProcessing, FixedDirectionalFilterBank, DWT2d, ContourletTransform
 
 # 配置日志记录
 logger = logging.getLogger(__name__)
@@ -312,27 +312,39 @@ class MultiScaleModel(CTEnhancementModel):
 
 
 class WaveletDomainCNNModel(CTEnhancementModel):
-    """小波域CNN模型 - 在小波域中进行特征提取和处理"""
-    
+    """小波域CNN模型 - 在小波/轮廓波域中用 U-Net 进行特征提取和处理
+
+    支持两种模式（通过 config.wavelet_type 控制）:
+    - 'contourlet'（默认）: 轮廓波变换 → 共享 U-Net → 逆变换 → Refinement U-Net
+    - 'dwt': DWT → U-Net → 逆DWT → Refinement U-Net
+    """
+
     def __init__(self, config: ModelConfig):
         super().__init__(config)
-        
+
+        wavelet_type = getattr(config, 'wavelet_type', 'contourlet')
+
         # 小波域处理模块
         self.wavelet_processor = WaveletDomainProcessing(
             in_channels=config.in_channels,
             out_channels=config.out_channels,
-            wavelet_type='directional'  # 可选: 'directional', 'dwt', 'contourlet'
+            wavelet_type=wavelet_type,
+            features=config.features,
         )
-        
-        # 后续的卷积细化
-        self.refine = nn.Sequential(
-            nn.Conv2d(config.out_channels, config.features[0], kernel_size=3, padding=1),
-            nn.BatchNorm2d(config.features[0]),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.Conv2d(config.features[0], config.features[0] // 2, kernel_size=3, padding=1),
-            nn.BatchNorm2d(config.features[0] // 2),
-            nn.LeakyReLU(negative_slope=0.01, inplace=True),
-            nn.Conv2d(config.features[0] // 2, config.out_channels, kernel_size=3, padding=1),
+
+        # Refinement U-Net
+        features = list(config.features)
+        num_strides = len(features) - 1
+        self.refine = UNet(
+            spatial_dims=2,
+            in_channels=config.out_channels,
+            out_channels=config.out_channels,
+            channels=features,
+            strides=(2,) * num_strides,
+            num_res_units=2,
+            dropout=config.dropout,
+            norm="batch" if config.use_batch_norm else None,
+            act=config.activation.lower(),
         )
     
     def forward(self, x, slice_handling='average'):
