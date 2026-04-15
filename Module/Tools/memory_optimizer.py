@@ -14,6 +14,27 @@ import warnings
 from contextlib import contextmanager
 
 
+def _resolve_shared_data_range_torch(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """为每个样本计算预测和目标共享的动态范围。"""
+    pred_min = pred.view(pred.shape[0], -1).min(dim=1)[0]
+    pred_max = pred.view(pred.shape[0], -1).max(dim=1)[0]
+    target_min = target.view(target.shape[0], -1).min(dim=1)[0]
+    target_max = target.view(target.shape[0], -1).max(dim=1)[0]
+
+    data_min = torch.minimum(pred_min, target_min)
+    data_max = torch.maximum(pred_max, target_max)
+    data_range = data_max - data_min
+    return torch.clamp(data_range, min=1e-8)
+
+
+def _resolve_shared_data_range_numpy(pred_img: np.ndarray, target_img: np.ndarray) -> float:
+    """使用预测和目标的联合范围计算指标。"""
+    data_min = min(float(pred_img.min()), float(target_img.min()))
+    data_max = max(float(pred_img.max()), float(target_img.max()))
+    data_range = data_max - data_min
+    return data_range if data_range > 1e-8 else 1.0
+
+
 class MemoryMonitor:
     """内存监控器"""
     
@@ -170,34 +191,19 @@ def _calculate_metrics_gpu(pred: torch.Tensor, target: torch.Tensor) -> Tuple[fl
     if target.device.type != 'cuda':
         target = target.cuda()
     
-    # 归一化到[0, 1]范围
-    pred_min = pred.view(pred.shape[0], -1).min(dim=1)[0].view(-1, 1, 1, 1, 1)
-    pred_max = pred.view(pred.shape[0], -1).max(dim=1)[0].view(-1, 1, 1, 1, 1)
-    target_min = target.view(target.shape[0], -1).min(dim=1)[0].view(-1, 1, 1, 1, 1)
-    target_max = target.view(target.shape[0], -1).max(dim=1)[0].view(-1, 1, 1, 1, 1)
-    
-    pred_range = pred_max - pred_min
-    target_range = target_max - target_min
-    
-    # 避免除零
-    pred_range = torch.where(pred_range < 1e-8, torch.ones_like(pred_range), pred_range)
-    target_range = torch.where(target_range < 1e-8, torch.ones_like(target_range), target_range)
-    
-    pred_norm = (pred - pred_min) / pred_range
-    target_norm = (target - target_min) / target_range
-    
     # 计算PSNR
-    mse = torch.mean((pred_norm - target_norm) ** 2, dim=[1, 2, 3, 4])
+    shared_range = _resolve_shared_data_range_torch(pred, target)
+    mse = torch.mean((pred - target) ** 2, dim=[1, 2, 3, 4])
     mse = torch.clamp(mse, min=1e-10)
-    psnr = 20 * torch.log10(1.0 / torch.sqrt(mse))
+    psnr = 20 * torch.log10(shared_range / torch.sqrt(mse))
     psnr_mean = torch.mean(psnr).item()
     
     # 计算SSIM（简化版本，实际应用中可能需要更复杂的实现）
     # 这里使用2D SSIM的近似计算
-    ssim_mean = _calculate_ssim_approximate(pred_norm, target_norm)
+    ssim_mean = _calculate_ssim_approximate(pred, target)
     
     # 清理中间张量
-    del pred_norm, target_norm, mse, psnr
+    del shared_range, mse, psnr
     torch.cuda.empty_cache()
     
     return float(psnr_mean), float(ssim_mean)
@@ -214,31 +220,22 @@ def _calculate_metrics_cpu(pred: torch.Tensor, target: torch.Tensor) -> Tuple[fl
         # 处理单张图像
         pred_img = pred[i].detach().cpu().numpy()
         target_img = target[i].detach().cpu().numpy()
-        
-        # 归一化
-        pred_min, pred_max = pred_img.min(), pred_img.max()
-        target_min, target_max = target_img.min(), target_img.max()
-        
-        pred_range = pred_max - pred_min if pred_max - pred_min > 1e-8 else 1.0
-        target_range = target_max - target_min if target_max - target_min > 1e-8 else 1.0
-        
-        pred_norm = (pred_img - pred_min) / pred_range
-        target_norm = (target_img - target_min) / target_range
-        
+
         # 计算PSNR
-        mse = np.mean((pred_norm - target_norm) ** 2)
+        data_range = _resolve_shared_data_range_numpy(pred_img, target_img)
+        mse = np.mean((pred_img - target_img) ** 2)
         if mse < 1e-10:
             psnr = 100.0  # 极高PSNR
         else:
-            psnr = 20 * np.log10(1.0 / np.sqrt(mse))
+            psnr = 20 * np.log10(data_range / np.sqrt(mse))
         psnr_values.append(psnr)
         
         # 计算SSIM（简化版本）
-        ssim = _calculate_ssim_simple(pred_norm, target_norm)
+        ssim = _calculate_ssim_simple(pred_img, target_img)
         ssim_values.append(ssim)
         
         # 及时清理
-        del pred_img, target_img, pred_norm, target_norm
+        del pred_img, target_img
         gc.collect()
     
     return float(np.mean(psnr_values)), float(np.mean(ssim_values))
@@ -301,8 +298,13 @@ def _calculate_ssim_approximate(pred: torch.Tensor, target: torch.Tensor) -> flo
                 sigma12 = torch.mean((pred_slice - mu1) * (target_slice - mu2))
                 
                 # SSIM公式
-                C1 = (0.01 * 1.0) ** 2
-                C2 = (0.03 * 1.0) ** 2
+                data_range = torch.clamp(
+                    torch.max(torch.stack([pred_slice.max(), target_slice.max()])) -
+                    torch.min(torch.stack([pred_slice.min(), target_slice.min()])),
+                    min=1e-8
+                )
+                C1 = (0.01 * data_range) ** 2
+                C2 = (0.03 * data_range) ** 2
                 
                 ssim_val = ((2 * mu1 * mu2 + C1) * (2 * sigma12 + C2)) / \
                           ((mu1**2 + mu2**2 + C1) * (sigma1 + sigma2 + C2))
@@ -319,8 +321,13 @@ def _calculate_ssim_approximate(pred: torch.Tensor, target: torch.Tensor) -> flo
         sigma2 = torch.var(target)
         sigma12 = torch.mean((pred - mu1) * (target - mu2))
         
-        C1 = (0.01 * 1.0) ** 2
-        C2 = (0.03 * 1.0) ** 2
+        data_range = torch.clamp(
+            torch.max(torch.stack([pred.max(), target.max()])) -
+            torch.min(torch.stack([pred.min(), target.min()])),
+            min=1e-8
+        )
+        C1 = (0.01 * data_range) ** 2
+        C2 = (0.03 * data_range) ** 2
         
         ssim_val = ((2 * mu1 * mu2 + C1) * (2 * sigma12 + C2)) / \
                   ((mu1**2 + mu2**2 + C1) * (sigma1 + sigma2 + C2))
@@ -336,8 +343,9 @@ def _calculate_ssim_simple(pred: np.ndarray, target: np.ndarray) -> float:
     sigma2 = np.var(target)
     sigma12 = np.mean((pred - mu1) * (target - mu2))
     
-    C1 = (0.01 * 1.0) ** 2
-    C2 = (0.03 * 1.0) ** 2
+    data_range = _resolve_shared_data_range_numpy(pred, target)
+    C1 = (0.01 * data_range) ** 2
+    C2 = (0.03 * data_range) ** 2
     
     ssim_val = ((2 * mu1 * mu2 + C1) * (2 * sigma12 + C2)) / \
               ((mu1**2 + mu2**2 + C1) * (sigma1 + sigma2 + C2))

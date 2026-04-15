@@ -310,13 +310,12 @@ class Trainer:
                 self.gradient_clip_norm
             )
     
-    def _check_early_stopping(self, val_loss):
+    def _check_early_stopping(self, is_best: bool):
         """检查是否应该早停"""
         if not self.use_early_stopping:
             return False
-            
-        if val_loss < self.best_val_loss:
-            self.best_val_loss = val_loss
+
+        if is_best:
             self.early_stopping_counter = 0
             return False
         else:
@@ -1031,6 +1030,7 @@ class Trainer:
             self.val_losses.append(val_loss)
             self.val_psnrs.append(val_psnr)
             self.val_ssims.append(val_ssim)
+            is_best = val_loss < self.best_val_loss
             
             # 学习率调度
             if self.warmup_scheduler and epoch < self.warmup_epochs:
@@ -1060,13 +1060,8 @@ class Trainer:
                 len(self.train_losses) >= 5):  # 至少有5个epoch的数据
                 self._perform_training_curve_analysis()
             
-            # 检查早停
-            if self._check_early_stopping(val_loss):
-                print(f"早停在 epoch {epoch+1} 触发")
-                break
-            
             # 保存最佳模型
-            if val_loss < self.best_val_loss:
+            if is_best:
                 self.best_val_loss = val_loss
                 save_checkpoint(
                     self.model, self.optimizer, self.scheduler, epoch, val_loss,
@@ -1078,6 +1073,11 @@ class Trainer:
                     }
                 )
                 print(f"保存最佳模型，验证损失: {val_loss:.4f}")
+
+            # 检查早停
+            if self._check_early_stopping(is_best):
+                print(f"早停在 epoch {epoch+1} 触发")
+                break
             
             # 定期保存检查点
             if (epoch + 1) % 10 == 0:

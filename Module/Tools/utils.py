@@ -13,6 +13,14 @@ from typing import Tuple, Dict, Any, Optional
 import yaml
 
 
+def _resolve_metric_data_range(pred_img: np.ndarray, target_img: np.ndarray) -> float:
+    """使用预测和目标的联合范围，避免分别归一化带来的指标虚高。"""
+    data_min = min(float(pred_img.min()), float(target_img.min()))
+    data_max = max(float(pred_img.max()), float(target_img.max()))
+    data_range = data_max - data_min
+    return data_range if data_range > 1e-8 else 1.0
+
+
 def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     """
     获取配置好的日志记录器
@@ -133,13 +141,9 @@ def calculate_metrics(pred: torch.Tensor, target: torch.Tensor,
         # 获取单张图像
         pred_img = pred_np[i, 0]  # 假设单通道
         target_img = target_np[i, 0]
-        
-        # 归一化到[0, 1]范围
-        pred_img = (pred_img - pred_img.min()) / (pred_img.max() - pred_img.min() + 1e-8)
-        target_img = (target_img - target_img.min()) / (target_img.max() - target_img.min() + 1e-8)
-        
+
         # 计算PSNR
-        data_range = 1.0  # 因为我们已经归一化到[0,1]
+        data_range = _resolve_metric_data_range(pred_img, target_img)
         psnr = peak_signal_noise_ratio(target_img, pred_img, data_range=data_range)
         psnr_values.append(psnr)
         
